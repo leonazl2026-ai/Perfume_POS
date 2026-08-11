@@ -1,17 +1,12 @@
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
+import { UnauthorizedError } from "@/lib/errors";
 
 /** Server-side session reads. Not usable from middleware — see lib/auth.ts. */
 
 export async function isAuthenticated(): Promise<boolean> {
   const store = await cookies();
   return verifySessionToken(store.get(SESSION_COOKIE)?.value);
-}
-
-export class UnauthorizedError extends Error {
-  constructor() {
-    super("You must be signed in to do that.");
-  }
 }
 
 /**

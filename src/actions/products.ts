@@ -12,7 +12,8 @@ import {
   stockInSchema,
   variantFormSchema,
 } from "@/lib/validators";
-import { UnauthorizedError, requireAdmin } from "@/lib/session";
+import { UnauthorizedError } from "@/lib/errors";
+import { requireAdmin } from "@/lib/session";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
 
 export type VariantFormInput = z.input<typeof variantFormSchema>;

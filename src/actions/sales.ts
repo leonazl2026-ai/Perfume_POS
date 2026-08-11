@@ -12,7 +12,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { createSaleSchema, updateDeliverySchema } from "@/lib/validators";
 import { getSaleDetail } from "@/lib/reportQueries";
-import { UnauthorizedError, isAuthenticated, requireAdmin } from "@/lib/session";
+import { InsufficientStockError, NotFoundError, UnauthorizedError } from "@/lib/errors";
+import { isAuthenticated, requireAdmin } from "@/lib/session";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
 import type { SaleDetail } from "@/types/reports";
 import {
@@ -23,9 +24,6 @@ import {
 import type { CheckoutResult, CreateSaleInput, CreateSaleResult } from "@/types/pos";
 
 const D = Prisma.Decimal;
-
-export class InsufficientStockError extends Error {}
-export class NotFoundError extends Error {}
 
 /** Row shape accumulated per cart line before it's persisted as a SaleLineItem. */
 interface PendingLineItem {

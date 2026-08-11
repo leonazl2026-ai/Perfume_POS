@@ -1,5 +1,23 @@
 /** Serializable shapes for the admin screens (Decimal -> number). */
 
+export interface SupplierRow {
+  id: string;
+  name: string;
+  phone: string | null;
+  contactLink: string | null;
+  address: string | null;
+  notes: string | null;
+  isActive: boolean;
+  batchCount: number;
+}
+
+export interface DuplicateSupplierMatch {
+  id: string;
+  name: string;
+  phone: string | null;
+  matchedOn: "NAME" | "PHONE" | "BOTH";
+}
+
 export interface AdminDecantOption {
   id: string;
   sizeMl: number;
@@ -23,6 +41,8 @@ export interface AdminVariant {
   decantActiveRemainingMl: number;
   isActive: boolean;
   notes: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
   decantOptions: AdminDecantOption[];
 }
 

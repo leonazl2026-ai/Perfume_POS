@@ -36,6 +36,9 @@ export const createSaleSchema = z.object({
   notes: z.string().optional(),
   // Fulfilment captured at the till. Any of these present marks the sale
   // as a delivery order; see createSale for how the status is derived.
+  orderChannel: z
+    .enum(["FACEBOOK_MESSENGER", "TELEGRAM", "TIKTOK", "VIBER", "WALK_IN", "OTHER"])
+    .default("WALK_IN"),
   isDelivery: z.boolean().optional(),
   deliveryAddress: z.string().optional(),
   courier: z.string().optional(),
@@ -64,6 +67,7 @@ export const variantFormSchema = z
     unopenedBottles: z.number().int().nonnegative("Sealed bottles must be a whole number"),
     decantActiveRemainingMl: z.number().nonnegative("Active ml cannot be negative"),
     notes: z.string().optional(),
+    supplierId: z.string().optional().nullable(),
     decantOptions: z.array(decantOptionSchema),
   })
   .refine((d) => Boolean(d.productId) || Boolean(d.newProductName?.trim()), {
@@ -81,6 +85,17 @@ export const variantFormSchema = z
     message: "A decant cannot be larger than the bottle it is poured from",
     path: ["decantOptions"],
   });
+
+export const supplierFormSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1, "Supplier name is required"),
+  phone: z.string().optional(),
+  contactLink: z.string().optional(),
+  address: z.string().optional(),
+  notes: z.string().optional(),
+  /** Set on the second submit, after the duplicate warning was shown. */
+  confirmDuplicate: z.boolean().optional(),
+});
 
 export const stockInSchema = z.object({
   variantId: z.string().min(1),
@@ -159,4 +174,69 @@ export const updateDeliverySchema = z.object({
   courier: z.string().optional(),
   trackingNumber: z.string().optional(),
   deliveryAddress: z.string().optional(),
+});
+
+export const bulkDeliverySchema = z.object({
+  saleIds: z.array(z.string().min(1)).min(1, "Select at least one order"),
+  deliveryStatus: deliveryStatusEnum,
+  courier: z.string().optional(),
+});
+
+// ─── Wastage ─────────────────────────────────────────────────────────
+
+export const wastageReasonEnum = z.enum([
+  "SPILLAGE",
+  "EVAPORATION",
+  "DAMAGED",
+  "TESTER",
+]);
+
+export const logWastageSchema = z
+  .object({
+    variantId: z.string().min(1),
+    reason: wastageReasonEnum,
+    mlDeducted: z.number().nonnegative().default(0),
+    bottlesDeducted: z.number().int().nonnegative().default(0),
+    note: z.string().optional(),
+  })
+  .refine((d) => d.mlDeducted > 0 || d.bottlesDeducted > 0, {
+    message: "Enter an amount of ml or a number of bottles to write off",
+    path: ["mlDeducted"],
+  });
+
+// ─── Customers ───────────────────────────────────────────────────────
+
+export const orderChannelEnum = z.enum([
+  "FACEBOOK_MESSENGER",
+  "TELEGRAM",
+  "TIKTOK",
+  "VIBER",
+  "WALK_IN",
+  "OTHER",
+]);
+
+export const customerTierEnum = z.enum(["NEW", "REGULAR", "VIP"]);
+
+export const customerFormSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  channel: orderChannelEnum.default("WALK_IN"),
+  tier: customerTierEnum.optional(),
+  tierLocked: z.boolean().optional(),
+  preferences: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// ─── Settings ────────────────────────────────────────────────────────
+
+export const settingsFormSchema = z.object({
+  lowStockBottles: z.number().int().nonnegative(),
+  lowStockMl: z.number().nonnegative(),
+  tierRegularSpend: z.number().nonnegative(),
+  tierRegularOrders: z.number().int().nonnegative(),
+  tierVipSpend: z.number().nonnegative(),
+  tierVipOrders: z.number().int().nonnegative(),
+  slowMovingDays: z.number().int().positive(),
 });

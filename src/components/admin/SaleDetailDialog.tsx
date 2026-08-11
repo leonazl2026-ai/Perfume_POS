@@ -6,6 +6,8 @@ import { formatCurrency } from "@/lib/format";
 import { formatDateTime } from "@/lib/dateRange";
 import { Modal } from "@/components/ui/Modal";
 import { DELIVERY_LABELS, DELIVERY_STYLES } from "@/lib/delivery";
+import { paymentLabel } from "@/lib/paymentMethods";
+import { channelLabel } from "@/lib/channels";
 import type { SaleDetail } from "@/types/reports";
 
 /** Loads a sale's full line items on demand rather than shipping them with the list. */
@@ -53,7 +55,7 @@ export function SaleDetailDialog({
         detail
           ? `${formatDateTime(new Date(detail.saleDate))} · ${
               detail.customerName ?? "Walk-in"
-            } · ${detail.paymentMethod}`
+            } · ${paymentLabel(detail.paymentMethod)} · ${channelLabel(detail.orderChannel)}`
           : undefined
       }
     >

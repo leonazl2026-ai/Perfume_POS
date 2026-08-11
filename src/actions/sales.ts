@@ -14,6 +14,9 @@ import { createSaleSchema, updateDeliverySchema } from "@/lib/validators";
 import { getSaleDetail } from "@/lib/reportQueries";
 import { InsufficientStockError, NotFoundError, UnauthorizedError } from "@/lib/errors";
 import { isAuthenticated, requireAdmin } from "@/lib/session";
+import { linkCustomerForSale, recalculateCustomer } from "@/lib/customers";
+import { DEFAULT_ORDER_CHANNEL, type OrderChannelValue } from "@/lib/channels";
+import { bulkDeliverySchema } from "@/lib/validators";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
 import type { SaleDetail } from "@/types/reports";
 import {
@@ -299,11 +302,24 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
         input.trackingNumber?.trim()
     );
 
+    const orderChannel = (input.orderChannel ?? DEFAULT_ORDER_CHANNEL) as OrderChannelValue;
+
+    // Build or match the CRM record before writing the sale, so the sale can
+    // carry the customer id and the aggregates can be rebuilt afterwards.
+    const customerId = await linkCustomerForSale(tx, {
+      name: input.customerName,
+      phone: input.customerPhone,
+      address: input.deliveryAddress,
+      channel: orderChannel,
+    });
+
     const sale = await tx.sale.create({
       data: {
         saleNumber,
         customerName: input.customerName,
         customerPhone: input.customerPhone?.trim() || null,
+        customerId,
+        orderChannel,
         paymentMethod: input.paymentMethod,
         notes: input.notes,
         deliveryStatus: isDelivery ? DeliveryStatus.PENDING : DeliveryStatus.NOT_REQUIRED,
@@ -338,6 +354,8 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
         data: inventoryLogs.map((log) => ({ ...log, saleId: sale.id })),
       });
     }
+
+    if (customerId) await recalculateCustomer(tx, customerId);
 
     return {
       saleId: sale.id,
@@ -431,6 +449,42 @@ export async function updateDelivery(
 }
 
 /**
+ * Applies one delivery status to many orders at once — the packing-day
+ * workflow of marking every Pending order as Shipped.
+ */
+export async function bulkUpdateDelivery(rawInput: unknown): Promise<ActionResult<number>> {
+  try {
+    await requireAdmin();
+    const input = bulkDeliverySchema.parse(rawInput);
+
+    const status = input.deliveryStatus as DeliveryStatus;
+    const now = new Date();
+
+    const result = await prisma.sale.updateMany({
+      where: { id: { in: input.saleIds }, status: SaleStatus.COMPLETED },
+      data: {
+        deliveryStatus: status,
+        ...(input.courier?.trim() ? { courier: input.courier.trim() } : {}),
+        // updateMany cannot read per-row values, so timestamps are set for
+        // the whole batch when moving into that state.
+        ...(status === DeliveryStatus.SHIPPED ? { shippedAt: now } : {}),
+        ...(status === DeliveryStatus.DELIVERED ? { deliveredAt: now } : {}),
+      },
+    });
+
+    revalidateSaleViews();
+    return actionOk(result.count);
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return actionError(error.message);
+    if (error instanceof ZodError) {
+      return actionError(error.issues[0]?.message ?? "Invalid selection");
+    }
+    console.error("[bulkUpdateDelivery]", error);
+    return actionError("Could not update those orders.");
+  }
+}
+
+/**
  * Voids a completed sale and returns its stock.
  *
  * Rather than re-deriving what to restore from the line items (which would
@@ -483,6 +537,10 @@ export async function voidSale(saleId: string, reason?: string): Promise<ActionR
             : sale.notes,
         },
       });
+
+      // Aggregates are rebuilt from completed sales, so this drops the
+      // voided order out of the customer's spend and may re-band their tier.
+      if (sale.customerId) await recalculateCustomer(tx, sale.customerId);
     });
 
     revalidateSaleViews();

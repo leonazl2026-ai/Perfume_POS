@@ -17,12 +17,16 @@ import { formatCurrency } from "@/lib/format";
 import { CartSidebar, type CheckoutMeta } from "@/components/pos/CartSidebar";
 import { ProductGrid } from "@/components/pos/ProductGrid";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
+import { DEFAULT_PAYMENT_METHOD } from "@/lib/paymentMethods";
+import { DEFAULT_ORDER_CHANNEL } from "@/lib/channels";
 import type { CatalogBundle, CatalogVariant, PosCatalog } from "@/types/catalog";
+import type { CustomerSuggestion } from "@/types/crm";
 
 const EMPTY_META: CheckoutMeta = {
   customerName: "",
   customerPhone: "",
-  paymentMethod: "CASH",
+  paymentMethod: DEFAULT_PAYMENT_METHOD,
+  orderChannel: DEFAULT_ORDER_CHANNEL,
   discount: 0,
   tax: 0,
   notes: "",
@@ -37,6 +41,7 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [meta, setMeta] = useState<CheckoutMeta>(EMPTY_META);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [lastSale, setLastSale] = useState<{ id: string; saleNumber: string } | null>(null);
   const [isSubmitting, startTransition] = useTransition();
 
   const variantsById = useMemo(
@@ -109,6 +114,19 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
     [catalog, variantsById, usage]
   );
 
+  /** Fills the whole customer block from a CRM match, without clobbering
+   *  an address the cashier already typed for this specific order. */
+  const handlePickCustomer = useCallback((customer: CustomerSuggestion) => {
+    setMeta((current) => ({
+      ...current,
+      customerName: customer.name ?? current.customerName,
+      customerPhone: customer.phone ?? current.customerPhone,
+      orderChannel: customer.channel,
+      deliveryAddress: current.deliveryAddress || customer.address || "",
+      isDelivery: current.isDelivery || Boolean(customer.address),
+    }));
+  }, []);
+
   const handleCheckout = useCallback(() => {
     if (cart.length === 0) return;
 
@@ -120,6 +138,7 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
         discount: meta.discount,
         tax: meta.tax,
         notes: meta.notes.trim() || undefined,
+        orderChannel: meta.orderChannel,
         isDelivery: meta.isDelivery,
         deliveryAddress: meta.deliveryAddress.trim() || undefined,
         courier: meta.courier.trim() || undefined,
@@ -138,6 +157,8 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
           result.data.totalProfit
         )}`
       );
+      // Surfaced above the cart so the cashier can print before the next sale.
+      setLastSale({ id: result.data.saleId, saleNumber: result.data.saleNumber });
       setCart([]);
       setMeta(EMPTY_META);
       // Pull down the post-sale stock levels the server just wrote.
@@ -172,18 +193,47 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
           onAddBundle={handleAddBundle}
         />
 
-        <CartSidebar
-          cart={cart}
-          totals={totals}
-          meta={meta}
-          isSubmitting={isSubmitting}
-          canIncrementLine={canIncrementLine}
-          onMetaChange={(patch) => setMeta((m) => ({ ...m, ...patch }))}
-          onSetQuantity={handleSetQuantity}
-          onRemove={handleRemove}
-          onClear={handleClear}
-          onCheckout={handleCheckout}
-        />
+        <div className="flex min-h-0 flex-col gap-2">
+          {lastSale && (
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <span className="min-w-0 truncate text-xs text-emerald-800">
+                Last sale {lastSale.saleNumber}
+              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href={`/receipt/${lastSale.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-emerald-700"
+                >
+                  Print receipt
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setLastSale(null)}
+                  aria-label="Dismiss"
+                  className="text-emerald-700 transition hover:text-emerald-900"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
+
+          <CartSidebar
+            cart={cart}
+            totals={totals}
+            meta={meta}
+            isSubmitting={isSubmitting}
+            canIncrementLine={canIncrementLine}
+            onMetaChange={(patch) => setMeta((m) => ({ ...m, ...patch }))}
+            onPickCustomer={handlePickCustomer}
+            onSetQuantity={handleSetQuantity}
+            onRemove={handleRemove}
+            onClear={handleClear}
+            onCheckout={handleCheckout}
+          />
+        </div>
       </main>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />

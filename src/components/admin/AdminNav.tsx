@@ -7,8 +7,13 @@ const LINKS = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/products", label: "Products & Stock" },
   { href: "/admin/bundles", label: "Bundle Builder" },
-  { href: "/admin/expenses", label: "Expenses" },
+  { href: "/admin/suppliers", label: "Suppliers" },
+  { href: "/admin/customers", label: "Customers" },
   { href: "/admin/sales", label: "Sales & Reports" },
+  { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/expenses", label: "Expenses" },
+  { href: "/admin/wastage", label: "Wastage Log" },
+  { href: "/admin/settings", label: "Settings" },
 ];
 
 export function AdminNav({

@@ -80,6 +80,7 @@ export async function upsertProductVariant(
               costPerMl,
               fullBottleSellingPrice: input.fullBottleSellingPrice,
               notes: input.notes?.trim() || null,
+              supplierId: input.supplierId || null,
             },
           })
         : await tx.productVariant.create({
@@ -95,6 +96,7 @@ export async function upsertProductVariant(
               decantActiveRemainingMl: input.decantActiveRemainingMl,
               purchaseDate: new Date(),
               notes: input.notes?.trim() || null,
+              supplierId: input.supplierId || null,
             },
           });
 

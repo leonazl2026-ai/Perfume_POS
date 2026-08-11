@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { upsertProductVariant } from "@/actions/products";
 import { formatCurrency } from "@/lib/format";
 import { Modal } from "@/components/ui/Modal";
-import type { AdminProductOption, AdminVariant } from "@/types/admin";
+import type { AdminProductOption, AdminVariant, SupplierRow } from "@/types/admin";
 
 interface DecantRow {
   sizeMl: string;
@@ -15,6 +15,7 @@ interface FormState {
   productId: string; // "" = create a new product
   newProductName: string;
   newProductBrand: string;
+  supplierId: string;
   variantBatchId: string;
   fullBottleSizeMl: string;
   bottleCost: string;
@@ -30,6 +31,7 @@ const BLANK: FormState = {
   productId: "",
   newProductName: "",
   newProductBrand: "",
+  supplierId: "",
   variantBatchId: "",
   fullBottleSizeMl: "",
   bottleCost: "",
@@ -52,6 +54,7 @@ function toFormState(variant: AdminVariant): FormState {
     productId: variant.productId,
     newProductName: "",
     newProductBrand: "",
+    supplierId: variant.supplierId ?? "",
     variantBatchId: variant.variantBatchId,
     fullBottleSizeMl: String(variant.fullBottleSizeMl),
     bottleCost: String(variant.bottleCost),
@@ -71,11 +74,19 @@ interface VariantFormProps {
   open: boolean;
   variant: AdminVariant | null; // null = create
   products: AdminProductOption[];
+  suppliers: SupplierRow[];
   onClose: () => void;
   onSaved: (message: string) => void;
 }
 
-export function VariantForm({ open, variant, products, onClose, onSaved }: VariantFormProps) {
+export function VariantForm({
+  open,
+  variant,
+  products,
+  suppliers,
+  onClose,
+  onSaved,
+}: VariantFormProps) {
   // Initialized once per mount. The parent remounts this via `key` on every
   // open, so an abandoned draft never leaks into the next dialog.
   const [form, setForm] = useState<FormState>(() => (variant ? toFormState(variant) : BLANK));
@@ -121,6 +132,7 @@ export function VariantForm({ open, variant, products, onClose, onSaved }: Varia
         newProductName: form.productId ? undefined : form.newProductName,
         newProductBrand: form.productId ? undefined : form.newProductBrand,
         variantBatchId: form.variantBatchId,
+        supplierId: form.supplierId || null,
         fullBottleSizeMl: num(form.fullBottleSizeMl),
         bottleCost: num(form.bottleCost),
         vialCost: num(form.vialCost),
@@ -208,6 +220,28 @@ export function VariantForm({ open, variant, products, onClose, onSaved }: Varia
                 className={inputClass}
                 placeholder="BDC100-B01"
               />
+            </Field>
+
+            <Field
+              label="Supplier"
+              hint={
+                suppliers.length === 0
+                  ? "No suppliers yet — add them under Admin → Suppliers."
+                  : undefined
+              }
+            >
+              <select
+                value={form.supplierId}
+                onChange={(e) => set("supplierId", e.target.value)}
+                className={inputClass}
+              >
+                <option value="">— No supplier —</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.phone ? `${s.name} (${s.phone})` : s.name}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             {!form.productId && (

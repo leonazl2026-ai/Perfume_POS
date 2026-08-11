@@ -11,6 +11,7 @@ import type {
   AdminBundle,
   AdminProductOption,
   AdminVariant,
+  SupplierRow,
 } from "@/types/admin";
 
 /**
@@ -97,6 +98,7 @@ export async function getAdminVariants(): Promise<AdminVariant[]> {
   const rows = await prisma.productVariant.findMany({
     include: {
       product: true,
+      supplier: true,
       decantOptions: { orderBy: { sizeMl: "asc" } },
     },
     orderBy: [{ isActive: "desc" }, { product: { name: "asc" } }],
@@ -117,6 +119,8 @@ export async function getAdminVariants(): Promise<AdminVariant[]> {
     decantActiveRemainingMl: v.decantActiveRemainingMl,
     isActive: v.isActive,
     notes: v.notes,
+    supplierId: v.supplierId,
+    supplierName: v.supplier?.name ?? null,
     decantOptions: v.decantOptions.map((o) => ({
       id: o.id,
       sizeMl: o.sizeMl,
@@ -130,6 +134,25 @@ export async function getAdminVariants(): Promise<AdminVariant[]> {
 export async function getProductOptions(): Promise<AdminProductOption[]> {
   const rows = await prisma.product.findMany({ orderBy: { name: "asc" } });
   return rows.map((p) => ({ id: p.id, name: p.name, brand: p.brand }));
+}
+
+export async function getSuppliers(includeInactive = false): Promise<SupplierRow[]> {
+  const rows = await prisma.supplier.findMany({
+    where: includeInactive ? undefined : { isActive: true },
+    include: { _count: { select: { variants: true } } },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+  });
+
+  return rows.map((s) => ({
+    id: s.id,
+    name: s.name,
+    phone: s.phone,
+    contactLink: s.contactLink,
+    address: s.address,
+    notes: s.notes,
+    isActive: s.isActive,
+    batchCount: s._count.variants,
+  }));
 }
 
 /** Bundles with live constituent costs and a sold-count guard for deletion. */

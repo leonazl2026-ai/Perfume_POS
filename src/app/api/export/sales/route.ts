@@ -2,6 +2,8 @@ import type { NextRequest } from "next/server";
 import { csvResponse, fileStamp, toCsv, type CsvValue } from "@/lib/csv";
 import { parseDateRange } from "@/lib/dateRange";
 import { DELIVERY_LABELS } from "@/lib/delivery";
+import { channelLabel } from "@/lib/channels";
+import { paymentLabel } from "@/lib/paymentMethods";
 import {
   getFinancialSummary,
   getSaleLinesForExport,
@@ -99,7 +101,9 @@ export async function GET(request: NextRequest) {
     sale.saleNumber,
     isoDate(new Date(sale.saleDate)),
     sale.customerName ?? "Walk-in",
-    sale.paymentMethod,
+    sale.customerPhone ?? "",
+    channelLabel(sale.orderChannel),
+    paymentLabel(sale.paymentMethod),
     sale.status,
     DELIVERY_LABELS[sale.deliveryStatus],
     sale.courier ?? "",
@@ -124,15 +128,17 @@ export async function GET(request: NextRequest) {
       "Sale Number",
       "Date",
       "Customer",
+      "Phone",
+      "Channel",
       "Payment",
       "Status",
       "Delivery",
       "Courier",
       "Tracking",
       "Items",
-      "Total",
-      "Cost",
-      "Profit",
+      "Total (Ks)",
+      "Cost (Ks)",
+      "Profit (Ks)",
     ],
     rows
   );

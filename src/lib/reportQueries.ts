@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { toDateFilter, type DateRange } from "@/lib/dateRange";
+import type { OrderChannelValue } from "@/lib/channels";
 import type {
   CustomerBreakdownRow,
   DeliveryStatusValue,
@@ -132,7 +133,9 @@ export async function getSales(filters: SaleFilters): Promise<SaleRow[]> {
     saleNumber: s.saleNumber,
     saleDate: s.saleDate.toISOString(),
     customerName: s.customerName,
+    customerPhone: s.customerPhone,
     paymentMethod: s.paymentMethod,
+    orderChannel: s.orderChannel as OrderChannelValue,
     status: s.status as "COMPLETED" | "VOIDED",
     deliveryStatus: s.deliveryStatus as DeliveryStatusValue,
     courier: s.courier,
@@ -164,7 +167,9 @@ export async function getSaleDetail(saleId: string): Promise<SaleDetail | null> 
     saleNumber: sale.saleNumber,
     saleDate: sale.saleDate.toISOString(),
     customerName: sale.customerName,
+    customerPhone: sale.customerPhone,
     paymentMethod: sale.paymentMethod,
+    orderChannel: sale.orderChannel as OrderChannelValue,
     status: sale.status as "COMPLETED" | "VOIDED",
     deliveryStatus: sale.deliveryStatus as DeliveryStatusValue,
     courier: sale.courier,
@@ -288,6 +293,66 @@ export async function getFinancialSummary(range: DateRange): Promise<FinancialSu
     saleCount,
     averageOrderValue: saleCount > 0 ? revenue / saleCount : 0,
   };
+}
+
+// ─── Wastage ─────────────────────────────────────────────────────────
+
+export interface WastageRow {
+  id: string;
+  createdAt: string;
+  productName: string;
+  variantBatchId: string;
+  reason: string;
+  mlDeducted: number;
+  bottlesDeducted: number;
+  lossValue: number;
+  note: string | null;
+}
+
+export async function getWastageLogs(range: DateRange): Promise<WastageRow[]> {
+  const rows = await prisma.wastageLog.findMany({
+    where: { createdAt: toDateFilter(range) },
+    include: { productVariant: { include: { product: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 500,
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt.toISOString(),
+    productName: row.productVariant.product.name,
+    variantBatchId: row.productVariant.variantBatchId,
+    reason: row.reason,
+    mlDeducted: row.mlDeducted,
+    bottlesDeducted: row.bottlesDeducted,
+    lossValue: Number(row.lossValue),
+    note: row.note,
+  }));
+}
+
+export interface WastageReasonTotal {
+  reason: string;
+  lossValue: number;
+  mlDeducted: number;
+  count: number;
+}
+
+export async function getWastageTotals(range: DateRange): Promise<WastageReasonTotal[]> {
+  const grouped = await prisma.wastageLog.groupBy({
+    by: ["reason"],
+    where: { createdAt: toDateFilter(range) },
+    _sum: { lossValue: true, mlDeducted: true },
+    _count: { _all: true },
+  });
+
+  return grouped
+    .map((row) => ({
+      reason: row.reason,
+      lossValue: Number(row._sum.lossValue ?? 0),
+      mlDeducted: row._sum.mlDeducted ?? 0,
+      count: row._count._all,
+    }))
+    .sort((a, b) => b.lossValue - a.lossValue);
 }
 
 export async function getCustomerBreakdown(range: DateRange): Promise<CustomerBreakdownRow[]> {

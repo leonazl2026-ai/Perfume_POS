@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { voidSale } from "@/actions/sales";
+import { bulkUpdateDelivery, voidSale } from "@/actions/sales";
 import { formatCurrency } from "@/lib/format";
+import { paymentLabel } from "@/lib/paymentMethods";
+import { CHANNEL_SHORT, CHANNEL_STYLES } from "@/lib/channels";
 import { formatDateTime, type RangePreset } from "@/lib/dateRange";
 import { DateRangeFilter, useFilterParams } from "@/components/admin/FilterBar";
 import { ExportButton } from "@/components/admin/ExportButton";
@@ -51,6 +53,50 @@ export function SalesReport({
 
   const notify = (kind: ToastMessage["kind"], text: string) =>
     setToast({ id: Date.now(), kind, text });
+
+  // Bulk fulfilment
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<DeliveryStatusValue>("SHIPPED");
+  const [bulkCourier, setBulkCourier] = useState("");
+
+  const selectableIds = sales.filter((s) => s.status === "COMPLETED").map((s) => s.id);
+  const allSelected = selectableIds.length > 0 && selected.size === selectableIds.length;
+
+  const toggleOne = (saleId: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(saleId)) next.delete(saleId);
+      else next.add(saleId);
+      return next;
+    });
+
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(selectableIds));
+
+  const applyBulk = () => {
+    if (selected.size === 0) return;
+
+    startTransition(async () => {
+      const result = await bulkUpdateDelivery({
+        saleIds: [...selected],
+        deliveryStatus: bulkStatus,
+        courier: bulkCourier,
+      });
+
+      if (!result.ok) {
+        notify("error", result.error);
+        return;
+      }
+
+      notify(
+        "success",
+        `${result.data} order${result.data === 1 ? "" : "s"} set to ${DELIVERY_LABELS[bulkStatus]}.`
+      );
+      setSelected(new Set());
+      setBulkCourier("");
+      router.refresh();
+    });
+  };
 
   const handleVoid = (sale: SaleRow) => {
     startTransition(async () => {
@@ -160,12 +206,64 @@ export function SalesReport({
             </div>
           </div>
 
+          {/* Bulk fulfilment toolbar — appears only with a selection. */}
+          {selected.size > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-gray-900 bg-white px-3 py-2">
+              <span className="text-xs font-medium text-gray-900">
+                {selected.size} selected
+              </span>
+              <select
+                value={bulkStatus}
+                onChange={(e) => setBulkStatus(e.target.value as DeliveryStatusValue)}
+                className="rounded-md border border-gray-300 px-2 py-1 text-xs outline-none focus:border-gray-900"
+              >
+                {DELIVERY_ORDER.map((status) => (
+                  <option key={status} value={status}>
+                    {DELIVERY_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={bulkCourier}
+                onChange={(e) => setBulkCourier(e.target.value)}
+                placeholder="Courier (optional)"
+                className="w-36 rounded-md border border-gray-300 px-2 py-1 text-xs outline-none focus:border-gray-900"
+              />
+              <button
+                type="button"
+                onClick={applyBulk}
+                disabled={isPending}
+                className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white transition hover:bg-gray-800 disabled:bg-gray-300"
+              >
+                {isPending ? "Updating…" : "Apply"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="text-xs font-medium text-gray-500 transition hover:text-gray-900"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-            <table className="w-full min-w-[46rem] text-sm">
+            <table className="w-full min-w-[52rem] text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                 <tr>
+                  <th className="w-8 px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all orders"
+                      disabled={selectableIds.length === 0}
+                      className="h-3.5 w-3.5 rounded border-gray-300"
+                    />
+                  </th>
                   <th className="px-4 py-2.5 font-medium">Sale</th>
                   <th className="px-4 py-2.5 font-medium">Customer</th>
+                  <th className="px-4 py-2.5 font-medium">Channel</th>
                   <th className="px-4 py-2.5 font-medium">Delivery</th>
                   <th className="px-4 py-2.5 text-right font-medium">Total</th>
                   <th className="px-4 py-2.5 text-right font-medium">Profit</th>
@@ -176,7 +274,7 @@ export function SalesReport({
               <tbody className="divide-y divide-gray-100">
                 {sales.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-sm text-gray-400">
                       No sales in this period.
                     </td>
                   </tr>
@@ -185,6 +283,16 @@ export function SalesReport({
                     const voided = sale.status === "VOIDED";
                     return (
                       <tr key={sale.id} className={voided ? "bg-red-50/40" : ""}>
+                        <td className="px-3 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(sale.id)}
+                            onChange={() => toggleOne(sale.id)}
+                            disabled={voided}
+                            aria-label={`Select ${sale.saleNumber}`}
+                            className="h-3.5 w-3.5 rounded border-gray-300 disabled:opacity-30"
+                          />
+                        </td>
                         <td className="px-4 py-2.5">
                           <button
                             type="button"
@@ -210,7 +318,15 @@ export function SalesReport({
                             {sale.customerName ?? "Walk-in"}
                           </span>
                           <span className="block text-[11px] text-gray-400">
-                            {sale.paymentMethod}
+                            {paymentLabel(sale.paymentMethod)}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-2.5">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${CHANNEL_STYLES[sale.orderChannel]}`}
+                          >
+                            {CHANNEL_SHORT[sale.orderChannel]}
                           </span>
                         </td>
 
@@ -257,6 +373,14 @@ export function SalesReport({
                             >
                               View
                             </button>
+                            <a
+                              href={`/receipt/${sale.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-gray-600 transition hover:text-gray-900"
+                            >
+                              Receipt
+                            </a>
                             {!voided && (
                               <>
                                 <button

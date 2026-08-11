@@ -1,3 +1,5 @@
+import type { OrderChannelValue } from "@/lib/channels";
+
 export type DeliveryStatusValue =
   | "NOT_REQUIRED"
   | "PENDING"
@@ -33,7 +35,9 @@ export interface SaleRow {
   saleNumber: string;
   saleDate: string; // ISO
   customerName: string | null;
+  customerPhone: string | null;
   paymentMethod: string;
+  orderChannel: OrderChannelValue;
   status: "COMPLETED" | "VOIDED";
   deliveryStatus: DeliveryStatusValue;
   courier: string | null;

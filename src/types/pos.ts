@@ -16,6 +16,8 @@ export interface CreateSaleInput {
   discount?: number;
   tax?: number;
   notes?: string;
+  /** Where the order originated — drives channel analytics. */
+  orderChannel?: string;
   /** Marks the sale for fulfilment; status starts at PENDING. */
   isDelivery?: boolean;
   deliveryAddress?: string;

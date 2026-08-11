@@ -7,14 +7,15 @@ import { formatCurrency, formatMl } from "@/lib/format";
 import { StockDialog } from "@/components/admin/StockDialog";
 import { VariantForm } from "@/components/admin/VariantForm";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
-import type { AdminProductOption, AdminVariant } from "@/types/admin";
+import type { AdminProductOption, AdminVariant, SupplierRow } from "@/types/admin";
 
 interface ProductManagerProps {
   variants: AdminVariant[];
   products: AdminProductOption[];
+  suppliers: SupplierRow[];
 }
 
-export function ProductManager({ variants, products }: ProductManagerProps) {
+export function ProductManager({ variants, products, suppliers }: ProductManagerProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [showInactive, setShowInactive] = useState(false);
@@ -244,6 +245,7 @@ export function ProductManager({ variants, products }: ProductManagerProps) {
         open={formOpen}
         variant={editing}
         products={products}
+        suppliers={suppliers}
         onClose={() => setFormOpen(false)}
         onSaved={afterMutation}
       />

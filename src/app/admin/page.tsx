@@ -7,6 +7,9 @@ import {
   getFinancialSummary,
   getSales,
 } from "@/lib/reportQueries";
+import { getBestSellers, getChannelPerformance } from "@/lib/analytics";
+import { getSettings } from "@/lib/settings";
+import { ChannelPanel, RankingPanel } from "@/components/admin/AnalyticsPanels";
 import { DELIVERY_LABELS } from "@/lib/delivery";
 
 export const dynamic = "force-dynamic";
@@ -15,25 +18,41 @@ export default async function AdminOverviewPage() {
   const today = parseDateRange({ preset: "today" });
   const month = parseDateRange({ preset: "month" });
 
-  const [todaySummary, monthSummary, expenseTotals, recentSales, lowStock, pendingCount] =
-    await Promise.all([
-      getFinancialSummary(today),
-      getFinancialSummary(month),
-      getExpenseTotalsByCategory(month),
-      getSales({ range: today }),
-      prisma.productVariant.findMany({
-        where: {
-          isActive: true,
-          OR: [{ unopenedBottles: { lte: 1 } }, { decantActiveRemainingMl: { lte: 10 } }],
-        },
-        include: { product: true },
-        orderBy: { decantActiveRemainingMl: "asc" },
-        take: 6,
-      }),
-      prisma.sale.count({
-        where: { status: "COMPLETED", deliveryStatus: { in: ["PENDING", "PACKED"] } },
-      }),
-    ]);
+  // Thresholds are admin-configurable under Settings.
+  const settings = await getSettings();
+
+  const [
+    todaySummary,
+    monthSummary,
+    expenseTotals,
+    recentSales,
+    lowStock,
+    pendingCount,
+    channels,
+    bestSellers,
+  ] = await Promise.all([
+    getFinancialSummary(today),
+    getFinancialSummary(month),
+    getExpenseTotalsByCategory(month),
+    getSales({ range: today }),
+    prisma.productVariant.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { unopenedBottles: { lte: settings.lowStockBottles } },
+          { decantActiveRemainingMl: { lte: settings.lowStockMl } },
+        ],
+      },
+      include: { product: true },
+      orderBy: { decantActiveRemainingMl: "asc" },
+      take: 6,
+    }),
+    prisma.sale.count({
+      where: { status: "COMPLETED", deliveryStatus: { in: ["PENDING", "PACKED"] } },
+    }),
+    getChannelPerformance(month),
+    getBestSellers(month),
+  ]);
 
   const topExpenses = expenseTotals.filter((e) => e.total > 0).slice(0, 5);
 
@@ -134,6 +153,10 @@ export default async function AdminOverviewPage() {
               </Link>
             </div>
 
+            <p className="mb-2 text-[11px] text-gray-400">
+              Alerts at ≤ {settings.lowStockBottles} sealed or ≤ {settings.lowStockMl}ml active
+            </p>
+
             {lowStock.length === 0 ? (
               <p className="py-6 text-center text-sm text-gray-400">Nothing is running low.</p>
             ) : (
@@ -142,11 +165,19 @@ export default async function AdminOverviewPage() {
                   <li key={v.id} className="py-2">
                     <p className="truncate text-sm text-gray-900">{v.product.name}</p>
                     <p className="truncate text-[11px] text-gray-400">
-                      <span className={v.unopenedBottles <= 1 ? "text-red-500" : ""}>
+                      <span
+                        className={
+                          v.unopenedBottles <= settings.lowStockBottles ? "text-red-500" : ""
+                        }
+                      >
                         {v.unopenedBottles} sealed
                       </span>
                       {" · "}
-                      <span className={v.decantActiveRemainingMl <= 10 ? "text-red-500" : ""}>
+                      <span
+                        className={
+                          v.decantActiveRemainingMl <= settings.lowStockMl ? "text-red-500" : ""
+                        }
+                      >
                         {formatMl(v.decantActiveRemainingMl)} active
                       </span>
                     </p>
@@ -190,6 +221,33 @@ export default async function AdminOverviewPage() {
           </section>
         </div>
       </div>
+
+      {/* Month-to-date insights */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <ChannelPanel rows={channels} />
+        <RankingPanel
+          title="Best sellers this month"
+          subtitle="Ranked by units sold"
+          rows={bestSellers.byProduct}
+          metric="quantity"
+          limit={6}
+        />
+        <RankingPanel
+          title="Most profitable this month"
+          subtitle="Ranked by net profit"
+          rows={bestSellers.mostProfitable}
+          metric="profit"
+          limit={6}
+        />
+      </div>
+
+      <p className="mt-3 text-xs text-gray-400">
+        Full breakdowns — brand rankings, decant size mix, dead stock, payment by channel — under{" "}
+        <Link href="/admin/analytics" className="font-medium text-gray-600 hover:text-gray-900">
+          Analytics
+        </Link>
+        .
+      </p>
     </div>
   );
 }

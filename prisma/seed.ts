@@ -109,16 +109,43 @@ async function seedExpenseCategories() {
   console.log(`Synced ${EXPENSE_CATEGORIES.length} expense categories.`);
 }
 
+/** Defaults for the tunable thresholds; safe to re-run. */
+async function seedSettings() {
+  const defaults: Record<string, string> = {
+    lowStockBottles: "2",
+    lowStockMl: "15",
+    tierRegularSpend: "150000",
+    tierRegularOrders: "3",
+    tierVipSpend: "500000",
+    tierVipOrders: "10",
+    slowMovingDays: "60",
+  };
+
+  for (const [key, value] of Object.entries(defaults)) {
+    // create-only: never stomp a value the admin has changed.
+    await prisma.setting.upsert({ where: { key }, create: { key, value }, update: {} });
+  }
+}
+
 async function main() {
   console.log("Seeding database…");
 
   await seedExpenseCategories();
+  await seedSettings();
 
   // Sample inventory is created only on a fresh database.
   if ((await prisma.product.count()) > 0) {
     console.log("Products already exist — skipping sample inventory.");
     return;
   }
+
+  const supplier = await prisma.supplier.create({
+    data: {
+      name: "Sample Importer",
+      phone: "09000000000",
+      notes: "Seed data — replace with your real supplier.",
+    },
+  });
 
   for (const seed of SEED_VARIANTS) {
     const product = await prisma.product.create({
@@ -129,6 +156,7 @@ async function main() {
       data: {
         variantBatchId: seed.batchId,
         productId: product.id,
+        supplierId: supplier.id,
         fullBottleSizeMl: seed.sizeMl,
         bottleCost: seed.bottleCost,
         vialCost: seed.vialCost,

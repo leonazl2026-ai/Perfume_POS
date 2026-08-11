@@ -1,0 +1,278 @@
+// Perfume & Decant POS — Prisma schema
+// Dev default: SQLite (zero-config, file-based). For production, swap
+// `provider = "sqlite"` -> "postgresql" and set DATABASE_URL accordingly.
+// Money/ml fields use Decimal for precision; on Postgres you may add
+// native attributes, e.g. `Decimal @db.Decimal(10, 2)`, for stricter typing.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum SaleLineType {
+  FULL_BOTTLE
+  DECANT
+  BUNDLE
+}
+
+enum InventoryTxType {
+  SALE_FULL_BOTTLE
+  SALE_DECANT
+  BUNDLE_SALE
+  RESTOCK
+  ADJUSTMENT
+  VOID_REVERSAL
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOIDED
+}
+
+/// Operational fulfilment state. Shipping *money* is not tracked here —
+/// absorbed postage is recorded as a "Delivery Cost" expense, matching the
+/// master Excel model.
+enum DeliveryStatus {
+  NOT_REQUIRED // walk-in / self pickup
+  PENDING // awaiting packing
+  PACKED
+  SHIPPED
+  DELIVERED
+  RETURNED
+}
+
+// ─────────────────────────────────────────────
+// Catalog
+// ─────────────────────────────────────────────
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String // e.g. "Bleu de Chanel EDP"
+  brand       String?
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  variants ProductVariant[]
+
+  @@index([brand])
+}
+
+/// A "Variant Batch" — one purchased batch of a product, tracked by
+/// Variant Batch ID. A batch can sell simultaneously as full bottles
+/// (from `unopenedBottles`) and as decants poured from an opened bottle
+/// (from `decantActiveRemainingMl`).
+model ProductVariant {
+  id             String @id @default(cuid())
+  variantBatchId String @unique // e.g. "BDC100-B01"
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  fullBottleSizeMl Float // e.g. 100
+  bottleCost       Decimal // cost of buying ONE full bottle in this batch
+  vialCost         Decimal @default(0) // default empty-vial cost per decant poured from this batch
+  costPerMl        Decimal // = bottleCost / fullBottleSizeMl — maintained on write, see lib/pricing.ts
+
+  fullBottleSellingPrice Decimal
+
+  // Inventory
+  unopenedBottles         Int   @default(0) // integer count of sealed bottles
+  decantActiveRemainingMl Float @default(0) // ml remaining in the currently-opened bottle
+
+  batchNumber  String?
+  purchaseDate DateTime?
+  notes        String?
+  isActive     Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  decantOptions        DecantOption[]
+  saleLineItems        SaleLineItem[]
+  bundleItems          BundleItem[]
+  inventoryTransactions InventoryTransaction[]
+
+  @@index([productId])
+}
+
+/// A sellable decant size + price for a given batch, e.g. 5ml / 10ml / 15ml.
+model DecantOption {
+  id String @id @default(cuid())
+
+  productVariantId String
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+
+  sizeMl       Float
+  sellingPrice Decimal
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productVariantId, sizeMl])
+}
+
+// ─────────────────────────────────────────────
+// Bundles (custom sets)
+// ─────────────────────────────────────────────
+
+model Bundle {
+  id          String @id @default(cuid())
+  name        String // e.g. "3x10ml Discovery Set"
+  sku         String @unique
+  description String?
+
+  sellingPrice Decimal
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items         BundleItem[]
+  saleLineItems SaleLineItem[]
+}
+
+/// A constituent line inside a bundle: N units of a specific full bottle
+/// or decant size, drawn from a specific ProductVariant's live inventory.
+model BundleItem {
+  id String @id @default(cuid())
+
+  bundleId String
+  bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  productVariantId String
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+
+  itemType     SaleLineType // FULL_BOTTLE | DECANT (BUNDLE not valid here)
+  decantSizeMl Float? // required when itemType = DECANT
+  quantity     Int // units of this constituent per ONE bundle sold
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productVariantId])
+}
+
+// ─────────────────────────────────────────────
+// Sales
+// ─────────────────────────────────────────────
+
+model Sale {
+  id            String     @id @default(cuid())
+  saleNumber    String     @unique
+  saleDate      DateTime   @default(now())
+  customerName  String?
+  customerPhone String?
+  paymentMethod String     @default("CASH")
+
+  subtotal    Decimal
+  discount    Decimal @default(0)
+  tax         Decimal @default(0)
+  total       Decimal
+  totalCost   Decimal
+  totalProfit Decimal
+
+  status SaleStatus @default(COMPLETED)
+  notes  String?
+
+  // Fulfilment tracking
+  deliveryStatus  DeliveryStatus @default(NOT_REQUIRED)
+  courier         String?
+  trackingNumber  String?
+  deliveryAddress String?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  lineItems SaleLineItem[]
+
+  @@index([saleDate])
+  @@index([status])
+  @@index([deliveryStatus])
+  @@index([customerName])
+}
+
+model SaleLineItem {
+  id     String @id @default(cuid())
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  lineType SaleLineType
+
+  productVariantId String?
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
+  decantSizeMl     Float? // set when lineType = DECANT
+
+  bundleId String?
+  bundle   Bundle? @relation(fields: [bundleId], references: [id])
+
+  quantity   Int
+  unitCost   Decimal // cost snapshot at time of sale
+  unitPrice  Decimal // price snapshot at time of sale
+  lineCost   Decimal
+  lineTotal  Decimal
+  lineProfit Decimal
+
+  createdAt DateTime @default(now())
+
+  @@index([saleId])
+}
+
+/// Audit trail for every inventory movement (sale, restock, manual adjustment).
+model InventoryTransaction {
+  id String @id @default(cuid())
+
+  productVariantId String
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+
+  type          InventoryTxType
+  bottlesDelta  Int   @default(0) // negative = deduction
+  mlDelta       Float @default(0) // negative = deduction
+
+  saleId    String?
+  reference String? // e.g. bundle name / manual note
+
+  createdAt DateTime @default(now())
+
+  @@index([productVariantId])
+  @@index([saleId])
+}
+
+// ─────────────────────────────────────────────
+// Expenses
+// ─────────────────────────────────────────────
+
+model ExpenseCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  /// Example line items, shown as a hint in the expense form.
+  description String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  expenses Expense[]
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  categoryId  String
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
+  description String?
+  amount      Decimal
+  expenseDate DateTime        @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([expenseDate])
+}

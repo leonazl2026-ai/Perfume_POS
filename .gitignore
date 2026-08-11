@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+build/
+
+# Secrets — AUTH_SECRET and ADMIN_PASSWORD live here.
+.env
+.env.local
+
+# SQLite dev database
+*.db
+*.db-journal
+prisma/dev.db*
+
+.DS_Store
+*.log

@@ -63,6 +63,9 @@ export default async function ReceiptPage({
   // is settled at the counter and has nothing pending.
   const isDelivery = isFulfilmentOrder(sale.deliveryStatus as DeliveryStatusValue);
 
+  const showLoyalty =
+    sale.pointsEarned > 0 || sale.pointsRedeemed > 0 || sale.pointsBalanceAfter !== null;
+
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       {/* Toolbar is hidden by the print stylesheet below. */}
@@ -124,6 +127,12 @@ export default async function ReceiptPage({
           {Number(sale.discount) > 0 && (
             <Line label="Discount" value={`- ${formatCurrency(Number(sale.discount))}`} />
           )}
+          {Number(sale.loyaltyDiscount) > 0 && (
+            <Line
+              label={`Points (${sale.pointsRedeemed})`}
+              value={`- ${formatCurrency(Number(sale.loyaltyDiscount))}`}
+            />
+          )}
           {Number(sale.tax) > 0 && (
             <Line label="Tax" value={formatCurrency(Number(sale.tax))} />
           )}
@@ -132,6 +141,25 @@ export default async function ReceiptPage({
             <dd>{formatCurrency(Number(sale.total))}</dd>
           </div>
         </dl>
+
+        {/* Loyalty summary — only when this sale actually moved points. */}
+        {showLoyalty && (
+          <section className="mt-3 border-t border-dashed border-black pt-2">
+            <h2 className="mb-1 text-[10px] font-bold uppercase">Loyalty points</h2>
+            {sale.pointsRedeemed > 0 && (
+              <Line label="Points redeemed" value={`-${sale.pointsRedeemed}`} />
+            )}
+            {sale.pointsEarned > 0 && (
+              <Line label="Points earned" value={`+${sale.pointsEarned}`} />
+            )}
+            {sale.pointsBalanceAfter !== null && (
+              <div className="flex justify-between font-bold">
+                <dt>New balance</dt>
+                <dd>{sale.pointsBalanceAfter} pts</dd>
+              </div>
+            )}
+          </section>
+        )}
 
         {isDelivery && (
           <section className="mt-3 border-t border-dashed border-black pt-2">

@@ -19,8 +19,18 @@ import { ProductGrid } from "@/components/pos/ProductGrid";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { DEFAULT_PAYMENT_METHOD } from "@/lib/paymentMethods";
 import { DEFAULT_ORDER_CHANNEL } from "@/lib/channels";
+import { maxRedeemablePoints, resolveRedemption } from "@/lib/loyalty";
+import type { LoyaltyConfig } from "@/lib/settings";
 import type { CatalogBundle, CatalogVariant, PosCatalog } from "@/types/catalog";
 import type { CustomerSuggestion } from "@/types/crm";
+
+interface LastSale {
+  id: string;
+  saleNumber: string;
+  pointsEarned: number;
+  pointsRedeemed: number;
+  pointsBalance: number | null;
+}
 
 const EMPTY_META: CheckoutMeta = {
   customerName: "",
@@ -29,6 +39,7 @@ const EMPTY_META: CheckoutMeta = {
   orderChannel: DEFAULT_ORDER_CHANNEL,
   discount: 0,
   tax: 0,
+  redeemPoints: 0,
   notes: "",
   isDelivery: false,
   deliveryAddress: "",
@@ -36,13 +47,21 @@ const EMPTY_META: CheckoutMeta = {
   trackingNumber: "",
 };
 
-export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
+export function PosTerminal({
+  catalog,
+  loyalty,
+}: {
+  catalog: PosCatalog;
+  loyalty: LoyaltyConfig;
+}) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [meta, setMeta] = useState<CheckoutMeta>(EMPTY_META);
   const [toast, setToast] = useState<ToastMessage | null>(null);
-  const [lastSale, setLastSale] = useState<{ id: string; saleNumber: string } | null>(null);
+  const [lastSale, setLastSale] = useState<LastSale | null>(null);
   const [isSubmitting, startTransition] = useTransition();
+  /** The CRM record attached to this sale, if the cashier matched one. */
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSuggestion | null>(null);
 
   const variantsById = useMemo(
     () => new Map(catalog.variants.map((v) => [v.id, v])),
@@ -52,9 +71,38 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
   // Recomputed on every cart change so the grid can disable anything that
   // would oversell the batch before the server has to reject it.
   const usage = useMemo(() => computeStockUsage(cart, catalog), [cart, catalog]);
-  const totals = useMemo(
-    () => computeTotals(cart, meta.discount, meta.tax),
+
+  const merchandiseValue = useMemo(
+    () => computeTotals(cart, meta.discount, meta.tax).merchandiseValue,
     [cart, meta.discount, meta.tax]
+  );
+
+  // Ceiling on redemption: never more than the balance, never more than the
+  // order is worth. Mirrors the server-side clamp in createSale.
+  const maxRedeemable = useMemo(
+    () =>
+      selectedCustomer
+        ? maxRedeemablePoints(selectedCustomer.points, merchandiseValue, loyalty)
+        : 0,
+    [selectedCustomer, merchandiseValue, loyalty]
+  );
+
+  const appliedRedemption = useMemo(
+    () =>
+      selectedCustomer
+        ? resolveRedemption(
+            meta.redeemPoints,
+            selectedCustomer.points,
+            merchandiseValue,
+            loyalty
+          )
+        : { points: 0, discount: 0 },
+    [selectedCustomer, meta.redeemPoints, merchandiseValue, loyalty]
+  );
+
+  const totals = useMemo(
+    () => computeTotals(cart, meta.discount, meta.tax, appliedRedemption.discount),
+    [cart, meta.discount, meta.tax, appliedRedemption.discount]
   );
 
   const notify = useCallback((kind: ToastMessage["kind"], text: string) => {
@@ -107,6 +155,7 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
   const handleClear = useCallback(() => {
     setCart([]);
     setMeta(EMPTY_META);
+    setSelectedCustomer(null);
   }, []);
 
   const canIncrementLine = useCallback(
@@ -121,12 +170,15 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
    * sale ships — that stays the cashier's explicit choice.
    */
   const handlePickCustomer = useCallback((customer: CustomerSuggestion) => {
+    setSelectedCustomer(customer);
     setMeta((current) => ({
       ...current,
       customerName: customer.name ?? current.customerName,
       customerPhone: customer.phone ?? current.customerPhone,
       orderChannel: customer.channel,
       deliveryAddress: current.deliveryAddress || customer.address || "",
+      // A fresh customer starts with no redemption staged.
+      redeemPoints: 0,
     }));
   }, []);
 
@@ -142,6 +194,7 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
         tax: meta.tax,
         notes: meta.notes.trim() || undefined,
         orderChannel: meta.orderChannel,
+        redeemPoints: appliedRedemption.points,
         isDelivery: meta.isDelivery,
         deliveryAddress: meta.deliveryAddress.trim() || undefined,
         courier: meta.courier.trim() || undefined,
@@ -161,9 +214,16 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
         )}`
       );
       // Surfaced above the cart so the cashier can print before the next sale.
-      setLastSale({ id: result.data.saleId, saleNumber: result.data.saleNumber });
+      setLastSale({
+        id: result.data.saleId,
+        saleNumber: result.data.saleNumber,
+        pointsEarned: result.data.pointsEarned,
+        pointsRedeemed: result.data.pointsRedeemed,
+        pointsBalance: result.data.pointsBalance,
+      });
       setCart([]);
       setMeta(EMPTY_META);
+      setSelectedCustomer(null);
       // Pull down the post-sale stock levels the server just wrote.
       router.refresh();
     });
@@ -203,6 +263,9 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
             <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
               <span className="min-w-0 truncate text-xs text-emerald-800">
                 Last sale {lastSale.saleNumber}
+                {lastSale.pointsRedeemed > 0 && ` · −${lastSale.pointsRedeemed} pts`}
+                {lastSale.pointsEarned > 0 && ` · +${lastSale.pointsEarned} pts`}
+                {lastSale.pointsBalance !== null && ` · balance ${lastSale.pointsBalance}`}
               </span>
               <div className="flex shrink-0 items-center gap-2">
                 <a
@@ -230,6 +293,9 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
             totals={totals}
             meta={meta}
             isSubmitting={isSubmitting}
+            loyalty={loyalty}
+            selectedCustomer={selectedCustomer}
+            maxRedeemable={maxRedeemable}
             canIncrementLine={canIncrementLine}
             onMetaChange={(patch) => setMeta((m) => ({ ...m, ...patch }))}
             onPickCustomer={handlePickCustomer}

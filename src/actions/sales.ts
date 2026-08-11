@@ -15,6 +15,12 @@ import { getSaleDetail } from "@/lib/reportQueries";
 import { InsufficientStockError, NotFoundError, UnauthorizedError } from "@/lib/errors";
 import { isAuthenticated, requireAdmin } from "@/lib/session";
 import { linkCustomerForSale, recalculateCustomer } from "@/lib/customers";
+import { getSettings, loyaltyConfig } from "@/lib/settings";
+import {
+  calculatePointsEarned,
+  recalculateLoyaltyPoints,
+  resolveRedemption,
+} from "@/lib/loyalty";
 import { DEFAULT_ORDER_CHANNEL, type OrderChannelValue } from "@/lib/channels";
 import { bulkDeliverySchema } from "@/lib/validators";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
@@ -287,8 +293,6 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
     const totalCost = lineItems.reduce((sum, l) => sum.add(l.lineCost), new D(0));
     const discount = new D(input.discount);
     const tax = new D(input.tax);
-    const total = subtotal.sub(discount).add(tax);
-    const totalProfit = subtotal.sub(discount).sub(totalCost);
 
     const saleNumber = await generateSaleNumber(tx);
 
@@ -309,6 +313,40 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
       channel: orderChannel,
     });
 
+    // ── Loyalty ─────────────────────────────────────────────────────
+    // Rates are read inside the transaction so a settings change mid-sale
+    // cannot price the earn and the redeem differently.
+    const config = loyaltyConfig(await getSettings(tx));
+
+    const merchandiseValue = subtotal.sub(discount);
+
+    // Redemption is capped by the balance and by the order value; the
+    // clamped figure is what actually gets charged and logged.
+    let redemption = { points: 0, discount: 0 };
+    if (customerId && config.enabled && input.redeemPoints && input.redeemPoints > 0) {
+      const customer = await tx.customer.findUnique({
+        where: { id: customerId },
+        select: { points: true },
+      });
+
+      redemption = resolveRedemption(
+        input.redeemPoints,
+        customer?.points ?? 0,
+        merchandiseValue.toNumber(),
+        config
+      );
+    }
+
+    const loyaltyDiscount = new D(redemption.discount);
+    const total = merchandiseValue.sub(loyaltyDiscount).add(tax);
+    const totalProfit = merchandiseValue.sub(loyaltyDiscount).sub(totalCost);
+
+    // Points are earned on what the customer actually paid for, so the part
+    // of the order funded by redeemed points does not earn them back.
+    const pointsEarned = customerId
+      ? calculatePointsEarned(merchandiseValue.sub(loyaltyDiscount).toNumber(), config)
+      : 0;
+
     const sale = await tx.sale.create({
       data: {
         saleNumber,
@@ -326,10 +364,13 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
         trackingNumber: isDelivery ? input.trackingNumber?.trim() || null : null,
         subtotal,
         discount,
+        loyaltyDiscount,
         tax,
         total,
         totalCost,
         totalProfit,
+        pointsEarned,
+        pointsRedeemed: redemption.points,
         lineItems: {
           create: lineItems.map((l) => ({
             lineType: l.lineType,
@@ -353,13 +394,62 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
       });
     }
 
-    if (customerId) await recalculateCustomer(tx, customerId);
+    let pointsBalance: number | null = null;
+
+    if (customerId) {
+      // Ledger rows first, then rebuild the cached balance from their sum.
+      const entries: {
+        customerId: string;
+        saleId: string;
+        type: "EARNED" | "REDEEMED";
+        points: number;
+        description: string;
+      }[] = [];
+
+      if (redemption.points > 0) {
+        entries.push({
+          customerId,
+          saleId: sale.id,
+          type: "REDEEMED",
+          points: -redemption.points,
+          description: `Redeemed on ${sale.saleNumber} (−${redemption.discount} Ks)`,
+        });
+      }
+
+      if (pointsEarned > 0) {
+        entries.push({
+          customerId,
+          saleId: sale.id,
+          type: "EARNED",
+          points: pointsEarned,
+          description: `Earned on ${sale.saleNumber}`,
+        });
+      }
+
+      if (entries.length > 0) {
+        await tx.loyaltyLog.createMany({ data: entries });
+      }
+
+      pointsBalance = await recalculateLoyaltyPoints(tx, customerId);
+
+      // Freeze the balance on the sale so a receipt reprint months later
+      // still shows what the customer was told at the counter.
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: { pointsBalanceAfter: pointsBalance },
+      });
+
+      await recalculateCustomer(tx, customerId);
+    }
 
     return {
       saleId: sale.id,
       saleNumber: sale.saleNumber,
       total: total.toNumber(),
       totalProfit: totalProfit.toNumber(),
+      pointsEarned,
+      pointsRedeemed: redemption.points,
+      pointsBalance,
     };
   });
 
@@ -536,9 +626,34 @@ export async function voidSale(saleId: string, reason?: string): Promise<ActionR
         },
       });
 
-      // Aggregates are rebuilt from completed sales, so this drops the
-      // voided order out of the customer's spend and may re-band their tier.
-      if (sale.customerId) await recalculateCustomer(tx, sale.customerId);
+      if (sale.customerId) {
+        // Mirror every loyalty movement this sale caused. Earned points are
+        // clawed back, redeemed points are handed back, as REVERTED rows so
+        // the customer's history explains the change.
+        const movements = await tx.loyaltyLog.findMany({
+          where: { saleId, type: { in: ["EARNED", "REDEEMED"] } },
+        });
+
+        if (movements.length > 0) {
+          await tx.loyaltyLog.createMany({
+            data: movements.map((movement) => ({
+              customerId: movement.customerId,
+              saleId,
+              type: "REVERTED" as const,
+              points: -movement.points,
+              description: `Reversal of ${sale.saleNumber} (${
+                movement.type === "EARNED" ? "earned" : "redeemed"
+              })`,
+            })),
+          });
+        }
+
+        await recalculateLoyaltyPoints(tx, sale.customerId);
+
+        // Aggregates are rebuilt from completed sales, so this drops the
+        // voided order out of the customer's spend and may re-band their tier.
+        await recalculateCustomer(tx, sale.customerId);
+      }
     });
 
     revalidateSaleViews();

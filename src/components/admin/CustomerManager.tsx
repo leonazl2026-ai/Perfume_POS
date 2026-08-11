@@ -9,6 +9,8 @@ import { CHANNEL_LABELS, CHANNEL_SHORT, CHANNEL_STYLES, ORDER_CHANNELS } from "@
 import { CUSTOMER_TIERS, TIER_LABELS, TIER_STYLES } from "@/lib/tiers";
 import { useFilterParams } from "@/components/admin/FilterBar";
 import { CustomerDetailDialog } from "@/components/admin/CustomerDetailDialog";
+import { LoyaltyDialog } from "@/components/admin/LoyaltyDialog";
+import type { LoyaltyConfig } from "@/lib/settings";
 import { Modal } from "@/components/ui/Modal";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import type { CrmSummary, CustomerRow } from "@/types/crm";
@@ -41,9 +43,11 @@ const BLANK: FormState = {
 export function CustomerManager({
   customers,
   summary,
+  loyalty,
 }: {
   customers: CustomerRow[];
   summary: CrmSummary;
+  loyalty: LoyaltyConfig;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -53,6 +57,7 @@ export function CustomerManager({
   const activeChannel = searchParams.get("channel") ?? "";
 
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [pointsTarget, setPointsTarget] = useState<CustomerRow | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -178,6 +183,7 @@ export function CustomerManager({
               <th className="px-4 py-2.5 font-medium">Tier</th>
               <th className="px-4 py-2.5 text-right font-medium">Orders</th>
               <th className="px-4 py-2.5 text-right font-medium">Spent</th>
+              <th className="px-4 py-2.5 text-right font-medium">Points</th>
               <th className="px-4 py-2.5 font-medium">Last purchase</th>
               <th className="px-4 py-2.5 text-right font-medium">Actions</th>
             </tr>
@@ -185,7 +191,7 @@ export function CustomerManager({
           <tbody className="divide-y divide-gray-100">
             {customers.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-sm text-gray-400">
+                <td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-400">
                   No customers match these filters. Customers are created automatically when a
                   sale records a phone number.
                 </td>
@@ -231,6 +237,20 @@ export function CustomerManager({
                   <td className="px-4 py-3 text-right font-medium text-gray-900">
                     {formatCurrency(customer.totalSpent)}
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setPointsTarget(customer)}
+                      title="View point history / adjust"
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium transition ${
+                        customer.points > 0
+                          ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                          : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {customer.points} pts
+                    </button>
+                  </td>
                   <td className="whitespace-nowrap px-4 py-3 text-gray-500">
                     {customer.lastPurchaseAt
                       ? formatDate(new Date(customer.lastPurchaseAt))
@@ -244,6 +264,13 @@ export function CustomerManager({
                         className="text-gray-600 transition hover:text-gray-900"
                       >
                         View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPointsTarget(customer)}
+                        className="text-gray-600 transition hover:text-gray-900"
+                      >
+                        Points
                       </button>
                       <button
                         type="button"
@@ -404,6 +431,14 @@ export function CustomerManager({
       </Modal>
 
       <CustomerDetailDialog customerId={detailId} onClose={() => setDetailId(null)} />
+
+      <LoyaltyDialog
+        key={pointsTarget?.id ?? "none"}
+        customer={pointsTarget}
+        loyalty={loyalty}
+        onClose={() => setPointsTarget(null)}
+        onAdjusted={(message) => notify("success", message)}
+      />
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );

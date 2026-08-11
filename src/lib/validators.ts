@@ -39,6 +39,7 @@ export const createSaleSchema = z.object({
   orderChannel: z
     .enum(["FACEBOOK_MESSENGER", "TELEGRAM", "TIKTOK", "VIBER", "WALK_IN", "OTHER"])
     .default("WALK_IN"),
+  redeemPoints: z.number().int().nonnegative().optional(),
   isDelivery: z.boolean().optional(),
   deliveryAddress: z.string().optional(),
   courier: z.string().optional(),
@@ -239,4 +240,23 @@ export const settingsFormSchema = z.object({
   tierVipSpend: z.number().nonnegative(),
   tierVipOrders: z.number().int().nonnegative(),
   slowMovingDays: z.number().int().positive(),
+
+  loyaltyEnabled: z.boolean(),
+  earnRateAmount: z.number().int().positive("Earn rate must be greater than 0"),
+  pointsEarnedPerRate: z.number().int().positive("Points per rate must be at least 1"),
+  redeemPointValue: z.number().int().positive("Point value must be at least 1"),
 });
+
+// ─── Loyalty ─────────────────────────────────────────────────────────
+
+export const adjustPointsSchema = z
+  .object({
+    customerId: z.string().min(1),
+    /** Signed: positive grants points, negative deducts them. */
+    points: z.number().int(),
+    note: z.string().optional(),
+  })
+  .refine((d) => d.points !== 0, {
+    message: "Enter a non-zero number of points",
+    path: ["points"],
+  });

@@ -21,6 +21,15 @@ export interface AppSettings {
   tierVipOrders: number;
   /** Days of no sales before a batch counts as slow-moving. */
   slowMovingDays: number;
+
+  // ── Loyalty ──
+  /** Master switch; when off nothing is earned and redemption is hidden. */
+  loyaltyEnabled: boolean;
+  /** Spend this much (Ks) to earn `pointsEarnedPerRate` points. */
+  earnRateAmount: number;
+  pointsEarnedPerRate: number;
+  /** Discount value in Ks granted by one redeemed point. */
+  redeemPointValue: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -31,9 +40,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   tierVipSpend: 500_000,
   tierVipOrders: 10,
   slowMovingDays: 60,
+
+  loyaltyEnabled: true,
+  earnRateAmount: 1000,
+  pointsEarnedPerRate: 1,
+  redeemPointValue: 10,
 };
 
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];
+
+/** Keys persisted as "1"/"0" rather than as numbers. */
+const BOOLEAN_KEYS = new Set<keyof AppSettings>(["loyaltyEnabled"]);
 
 /**
  * Pass the transaction client when reading inside a transaction — issuing the
@@ -44,34 +61,62 @@ export async function getSettings(db: Db = prisma): Promise<AppSettings> {
   const stored = new Map(rows.map((row) => [row.key, row.value]));
 
   const settings = { ...DEFAULT_SETTINGS };
+
   for (const key of SETTING_KEYS) {
     const raw = stored.get(key);
     if (raw === undefined) continue;
 
+    if (BOOLEAN_KEYS.has(key)) {
+      (settings[key] as boolean) = raw === "1" || raw.toLowerCase() === "true";
+      continue;
+    }
+
     const parsed = Number.parseFloat(raw);
     // Ignore corrupt values rather than propagating NaN into queries.
-    if (Number.isFinite(parsed) && parsed >= 0) settings[key] = parsed;
+    if (Number.isFinite(parsed) && parsed >= 0) (settings[key] as number) = parsed;
   }
 
   return settings;
 }
 
 export async function updateSettings(patch: Partial<AppSettings>): Promise<void> {
-  const entries = Object.entries(patch).filter(
-    ([key, value]) =>
-      SETTING_KEYS.includes(key as keyof AppSettings) &&
-      typeof value === "number" &&
-      Number.isFinite(value) &&
-      value >= 0
-  );
+  for (const [key, value] of Object.entries(patch)) {
+    const typedKey = key as keyof AppSettings;
+    if (!SETTING_KEYS.includes(typedKey)) continue;
 
-  for (const [key, value] of entries) {
+    let serialized: string;
+
+    if (BOOLEAN_KEYS.has(typedKey)) {
+      if (typeof value !== "boolean") continue;
+      serialized = value ? "1" : "0";
+    } else {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+      serialized = String(value);
+    }
+
     await prisma.setting.upsert({
       where: { key },
-      create: { key, value: String(value) },
-      update: { value: String(value) },
+      create: { key, value: serialized },
+      update: { value: serialized },
     });
   }
+}
+
+/** The subset the POS needs; plain data, safe to send to the client. */
+export interface LoyaltyConfig {
+  enabled: boolean;
+  earnRateAmount: number;
+  pointsEarnedPerRate: number;
+  redeemPointValue: number;
+}
+
+export function loyaltyConfig(settings: AppSettings): LoyaltyConfig {
+  return {
+    enabled: settings.loyaltyEnabled,
+    earnRateAmount: settings.earnRateAmount,
+    pointsEarnedPerRate: settings.pointsEarnedPerRate,
+    redeemPointValue: settings.redeemPointValue,
+  };
 }
 
 export function tierThresholds(settings: AppSettings): TierThresholds {

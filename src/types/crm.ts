@@ -1,5 +1,16 @@
 import type { OrderChannelValue } from "@/lib/channels";
 import type { CustomerTierValue } from "@/lib/tiers";
+import type { LoyaltyTypeValue } from "@/lib/loyalty";
+
+export interface LoyaltyLogRow {
+  id: string;
+  type: LoyaltyTypeValue;
+  /** Signed: positive added, negative removed. */
+  points: number;
+  description: string | null;
+  saleNumber: string | null;
+  createdAt: string; // ISO
+}
 
 export interface CustomerRow {
   id: string;
@@ -13,6 +24,7 @@ export interface CustomerRow {
   notes: string | null;
   totalOrders: number;
   totalSpent: number;
+  points: number;
   lastPurchaseAt: string | null; // ISO
 }
 
@@ -56,4 +68,6 @@ export interface CustomerSuggestion {
   channel: OrderChannelValue;
   tier: CustomerTierValue;
   totalOrders: number;
+  /** Current balance, so the till can offer redemption immediately. */
+  points: number;
 }

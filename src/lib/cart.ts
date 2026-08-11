@@ -187,20 +187,32 @@ export function canIncrement(
 export interface CartTotals {
   subtotal: number;
   cost: number;
+  /** Subtotal less the manual discount — the base redemption can eat into. */
+  merchandiseValue: number;
+  loyaltyDiscount: number;
   total: number;
   profit: number;
   itemCount: number;
 }
 
-export function computeTotals(cart: CartLine[], discount: number, tax: number): CartTotals {
+export function computeTotals(
+  cart: CartLine[],
+  discount: number,
+  tax: number,
+  loyaltyDiscount = 0
+): CartTotals {
   const subtotal = cart.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
   const cost = cart.reduce((sum, l) => sum + l.unitCost * l.quantity, 0);
+  const merchandiseValue = subtotal - discount;
 
   return {
     subtotal,
     cost,
-    total: subtotal - discount + tax,
-    profit: subtotal - discount - cost,
+    merchandiseValue,
+    loyaltyDiscount,
+    total: merchandiseValue - loyaltyDiscount + tax,
+    // A redeemed point is a real giveaway of margin, so it reduces profit.
+    profit: merchandiseValue - loyaltyDiscount - cost,
     itemCount: cart.reduce((sum, l) => sum + l.quantity, 0),
   };
 }

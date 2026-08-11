@@ -18,6 +18,8 @@ export interface CreateSaleInput {
   notes?: string;
   /** Where the order originated — drives channel analytics. */
   orderChannel?: string;
+  /** Loyalty points the customer wants to spend; clamped server-side. */
+  redeemPoints?: number;
   /** Marks the sale for fulfilment; status starts at PENDING. */
   isDelivery?: boolean;
   deliveryAddress?: string;
@@ -31,6 +33,10 @@ export interface CreateSaleResult {
   saleNumber: string;
   total: number;
   totalProfit: number;
+  pointsEarned: number;
+  pointsRedeemed: number;
+  /** Balance after the sale; null when no CRM customer was attached. */
+  pointsBalance: number | null;
 }
 
 /**

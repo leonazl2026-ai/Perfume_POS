@@ -20,6 +20,7 @@ function toRow(customer: {
   notes: string | null;
   totalOrders: number;
   totalSpent: unknown;
+  points: number;
   lastPurchaseAt: Date | null;
 }): CustomerRow {
   return {
@@ -34,6 +35,7 @@ function toRow(customer: {
     notes: customer.notes,
     totalOrders: customer.totalOrders,
     totalSpent: Number(customer.totalSpent),
+    points: customer.points,
     lastPurchaseAt: customer.lastPurchaseAt?.toISOString() ?? null,
   };
 }
@@ -158,6 +160,7 @@ export async function searchCustomerSuggestions(query: string) {
     channel: c.channel as OrderChannelValue,
     tier: c.tier as CustomerTierValue,
     totalOrders: c.totalOrders,
+    points: c.points,
   }));
 }
 

@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { PosTerminal } from "@/components/pos/PosTerminal";
 import { getPosCatalog } from "@/lib/queries";
+import { getSettings, loyaltyConfig } from "@/lib/settings";
 
 // Stock levels must always reflect the latest sale, never a cached render.
 export const dynamic = "force-dynamic";
 
 export default async function PosPage() {
-  const catalog = await getPosCatalog();
+  const [catalog, settings] = await Promise.all([getPosCatalog(), getSettings()]);
 
   if (catalog.variants.length === 0 && catalog.bundles.length === 0) {
     return (
@@ -29,5 +30,5 @@ export default async function PosPage() {
     );
   }
 
-  return <PosTerminal catalog={catalog} />;
+  return <PosTerminal catalog={catalog} loyalty={loyaltyConfig(settings)} />;
 }

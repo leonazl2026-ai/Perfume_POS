@@ -119,6 +119,10 @@ async function seedSettings() {
     tierVipSpend: "500000",
     tierVipOrders: "10",
     slowMovingDays: "60",
+    loyaltyEnabled: "1",
+    earnRateAmount: "1000",
+    pointsEarnedPerRate: "1",
+    redeemPointValue: "10",
   };
 
   for (const [key, value] of Object.entries(defaults)) {

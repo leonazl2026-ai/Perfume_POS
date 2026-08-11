@@ -58,6 +58,15 @@ enum CustomerTier {
   VIP
 }
 
+/// Why a loyalty balance moved. Every change is a ledger row — the balance
+/// on Customer is a cache recomputed from the sum of these.
+enum LoyaltyType {
+  EARNED
+  REDEEMED
+  MANUAL_ADJUSTMENT
+  REVERTED
+}
+
 enum SaleStatus {
   COMPLETED
   VOIDED
@@ -188,10 +197,15 @@ model Customer {
   totalSpent     Decimal   @default(0)
   lastPurchaseAt DateTime?
 
+  /// Current loyalty balance. Cache of SUM(loyaltyLogs.points) — never
+  /// incremented blindly, always recomputed from the ledger.
+  points Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sales Sale[]
+  sales       Sale[]
+  loyaltyLogs LoyaltyLog[]
 
   @@index([name])
   @@index([tier])
@@ -277,10 +291,19 @@ model Sale {
 
   subtotal    Decimal
   discount    Decimal @default(0)
+  /// Discount funded by redeemed loyalty points. Kept separate from the
+  /// manual discount so reports can tell the two apart.
+  loyaltyDiscount Decimal @default(0)
   tax         Decimal @default(0)
   total       Decimal
   totalCost   Decimal
   totalProfit Decimal
+
+  // Loyalty snapshot for this sale — used by the receipt and by void.
+  pointsEarned       Int  @default(0)
+  pointsRedeemed     Int  @default(0)
+  /// Balance immediately after this sale, frozen for receipt reprints.
+  pointsBalanceAfter Int?
 
   status SaleStatus @default(COMPLETED)
   notes  String?
@@ -295,7 +318,8 @@ model Sale {
 
   createdAt DateTime @default(now())
 
-  lineItems SaleLineItem[]
+  lineItems   SaleLineItem[]
+  loyaltyLogs LoyaltyLog[]
 
   @@index([saleDate])
   @@index([status])
@@ -424,6 +448,32 @@ model WastageLog {
   @@index([productVariantId])
   @@index([createdAt])
   @@index([reason])
+}
+
+// ─────────────────────────────────────────────
+// Loyalty
+// ─────────────────────────────────────────────
+
+/// Append-only points ledger. `points` is signed: positive for earning and
+/// refunds, negative for redemptions and reversals.
+model LoyaltyLog {
+  id String @id @default(cuid())
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  saleId String?
+  sale   Sale?   @relation(fields: [saleId], references: [id])
+
+  type        LoyaltyType
+  points      Int
+  description String?
+
+  createdAt DateTime @default(now())
+
+  @@index([customerId])
+  @@index([saleId])
+  @@index([createdAt])
 }
 
 // ─────────────────────────────────────────────

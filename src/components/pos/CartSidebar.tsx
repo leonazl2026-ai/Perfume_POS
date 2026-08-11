@@ -4,6 +4,8 @@ import { formatCurrency } from "@/lib/format";
 import { PAYMENT_METHODS, paymentLabel } from "@/lib/paymentMethods";
 import { CHANNEL_LABELS, ORDER_CHANNELS, type OrderChannelValue } from "@/lib/channels";
 import { CustomerLookup } from "@/components/pos/CustomerLookup";
+import { pointsToValue } from "@/lib/loyalty";
+import type { LoyaltyConfig } from "@/lib/settings";
 import type { CartLine, CartTotals } from "@/lib/cart";
 import type { CustomerSuggestion } from "@/types/crm";
 
@@ -14,6 +16,7 @@ export interface CheckoutMeta {
   orderChannel: OrderChannelValue;
   discount: number;
   tax: number;
+  redeemPoints: number;
   notes: string;
   isDelivery: boolean;
   deliveryAddress: string;
@@ -26,6 +29,9 @@ interface CartSidebarProps {
   totals: CartTotals;
   meta: CheckoutMeta;
   isSubmitting: boolean;
+  loyalty: LoyaltyConfig;
+  selectedCustomer: CustomerSuggestion | null;
+  maxRedeemable: number;
   canIncrementLine: (line: CartLine) => boolean;
   onMetaChange: (patch: Partial<CheckoutMeta>) => void;
   onPickCustomer: (customer: CustomerSuggestion) => void;
@@ -40,6 +46,9 @@ export function CartSidebar({
   totals,
   meta,
   isSubmitting,
+  loyalty,
+  selectedCustomer,
+  maxRedeemable,
   canIncrementLine,
   onMetaChange,
   onPickCustomer,
@@ -49,6 +58,7 @@ export function CartSidebar({
   onCheckout,
 }: CartSidebarProps) {
   const isEmpty = cart.length === 0;
+  const showLoyalty = loyalty.enabled && selectedCustomer !== null;
 
   return (
     <aside className="flex h-full min-h-0 flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -196,6 +206,75 @@ export function CartSidebar({
           />
         </div>
 
+        {/* Loyalty — only once a CRM customer is attached to the sale. */}
+        {showLoyalty && selectedCustomer && (
+          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs font-medium text-amber-800">Loyalty points</span>
+              <span className="text-xs text-amber-700">
+                {selectedCustomer.points} pts ·{" "}
+                {formatCurrency(pointsToValue(selectedCustomer.points, loyalty))}
+              </span>
+            </div>
+
+            {maxRedeemable > 0 ? (
+              <div className="mt-2 flex items-end gap-2">
+                <label className="block flex-1">
+                  <span className="mb-1 block text-[11px] font-medium text-amber-800">
+                    Redeem points
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxRedeemable}
+                    step={1}
+                    value={meta.redeemPoints === 0 ? "" : meta.redeemPoints}
+                    placeholder="0"
+                    disabled={isSubmitting}
+                    onChange={(e) => {
+                      const parsed = Math.floor(Number.parseFloat(e.target.value));
+                      // Clamped here as well as on the server, so the preview
+                      // never shows a discount the sale will not honour.
+                      const next =
+                        Number.isFinite(parsed) && parsed > 0
+                          ? Math.min(parsed, maxRedeemable)
+                          : 0;
+                      onMetaChange({ redeemPoints: next });
+                    }}
+                    className="w-full rounded-md border border-amber-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-amber-600 disabled:bg-gray-50"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => onMetaChange({ redeemPoints: maxRedeemable })}
+                  className="rounded-md border border-amber-600 px-2.5 py-1.5 text-xs font-medium text-amber-800 transition hover:bg-amber-600 hover:text-white disabled:opacity-50"
+                >
+                  Max ({maxRedeemable})
+                </button>
+
+                {meta.redeemPoints > 0 && (
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => onMetaChange({ redeemPoints: 0 })}
+                    className="pb-1.5 text-xs font-medium text-amber-700 transition hover:text-amber-900 disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="mt-1 text-[11px] text-amber-700">
+                {selectedCustomer.points === 0
+                  ? "No points to redeem yet."
+                  : "Add items to the cart to redeem points."}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Delivery — collapsed until needed so walk-in checkout stays fast. */}
         <div className="mt-2 rounded-md border border-gray-200 px-2.5 py-2">
           <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
@@ -246,6 +325,13 @@ export function CartSidebar({
           <Row label="Subtotal" value={formatCurrency(totals.subtotal)} />
           {meta.discount > 0 && (
             <Row label="Discount" value={`− ${formatCurrency(meta.discount)}`} />
+          )}
+          {totals.loyaltyDiscount > 0 && (
+            <Row
+              label={`Points (${meta.redeemPoints})`}
+              value={`− ${formatCurrency(totals.loyaltyDiscount)}`}
+              valueClass="text-amber-700"
+            />
           )}
           {meta.tax > 0 && <Row label="Tax" value={formatCurrency(meta.tax)} />}
           <Row

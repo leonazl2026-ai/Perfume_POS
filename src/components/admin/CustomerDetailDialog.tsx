@@ -71,7 +71,7 @@ export function CustomerDetailDialog({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <Stat label="Total orders" value={String(detail.totalOrders)} />
             <Stat label="Total spent" value={formatCurrency(detail.totalSpent)} />
             <Stat
@@ -80,6 +80,7 @@ export function CustomerDetailDialog({
                 detail.totalOrders > 0 ? detail.totalSpent / detail.totalOrders : 0
               )}
             />
+            <Stat label="Points" value={`${detail.points} pts`} />
             <Stat
               label="Last purchase"
               value={

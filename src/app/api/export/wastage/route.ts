@@ -23,10 +23,13 @@ export async function GET(request: NextRequest) {
     new Date(log.createdAt).toISOString(),
     log.productName,
     log.variantBatchId,
+    log.supplierName ?? "",
     wastageLabel(log.reason),
     log.mlDeducted || "",
     log.bottlesDeducted || "",
-    money(log.lossValue),
+    // A voided row is shown at zero so the column still sums to the real loss.
+    log.voidedAt ? "0.00" : money(log.lossValue),
+    log.voidedAt ? "VOIDED" : "",
     log.note ?? "",
   ]);
 
@@ -37,6 +40,7 @@ export async function GET(request: NextRequest) {
       `Total — ${wastageLabel(total.reason)}`,
       "",
       "",
+      "",
       `${total.count} events`,
       total.mlDeducted,
       "",
@@ -44,7 +48,8 @@ export async function GET(request: NextRequest) {
     ]);
   }
   rows.push([
-    "Grand total",
+    "Grand total (excludes voided)",
+    "",
     "",
     "",
     "",
@@ -58,10 +63,12 @@ export async function GET(request: NextRequest) {
       "Date",
       "Product",
       "Batch",
+      "Supplier",
       "Reason",
       "ml Deducted",
       "Bottles Deducted",
       "Monetary Loss (Ks)",
+      "Voided",
       "Note",
     ],
     rows

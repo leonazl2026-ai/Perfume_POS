@@ -99,6 +99,15 @@ export function SaleDetailDialog({
                   <td className="py-2">
                     <span className="block text-gray-900">{line.name}</span>
                     <span className="block text-[11px] text-gray-400">{line.detail}</span>
+                    {/* Traceability: which batch this poured from, and who supplied it. */}
+                    {line.batchId && (
+                      <span className="mt-0.5 block font-mono text-[10px] text-gray-400">
+                        Batch: {line.batchId}
+                        {line.supplierName && (
+                          <span className="font-sans"> | Supplier: {line.supplierName}</span>
+                        )}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 text-center text-gray-600">{line.quantity}</td>
                   <td className="py-2 text-right text-gray-900">

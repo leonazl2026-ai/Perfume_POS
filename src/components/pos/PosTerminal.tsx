@@ -114,8 +114,12 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
     [catalog, variantsById, usage]
   );
 
-  /** Fills the whole customer block from a CRM match, without clobbering
-   *  an address the cashier already typed for this specific order. */
+  /**
+   * Fills the customer block from a CRM match, without clobbering an address
+   * the cashier already typed. It deliberately does NOT tick "Delivery order":
+   * a stored address is a convenience, not a statement that this particular
+   * sale ships — that stays the cashier's explicit choice.
+   */
   const handlePickCustomer = useCallback((customer: CustomerSuggestion) => {
     setMeta((current) => ({
       ...current,
@@ -123,7 +127,6 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
       customerPhone: customer.phone ?? current.customerPhone,
       orderChannel: customer.channel,
       deliveryAddress: current.deliveryAddress || customer.address || "",
-      isDelivery: current.isDelivery || Boolean(customer.address),
     }));
   }, []);
 
@@ -183,7 +186,9 @@ export function PosTerminal({ catalog }: { catalog: PosCatalog }) {
         </a>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[1fr_380px]">
+      {/* Cart takes ~36% but never drops below 400px, so customer inputs,
+          channel selectors and totals all have room to breathe. */}
+      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[1fr_minmax(400px,36%)] 2xl:grid-cols-[1fr_minmax(440px,32%)]">
         <ProductGrid
           catalog={catalog}
           variantsById={variantsById}

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { bundleAddableCount, remainingStock, type StockUsage } from "@/lib/cart";
 import { formatCurrency, formatMl } from "@/lib/format";
 import type { CatalogBundle, CatalogVariant, PosCatalog } from "@/types/catalog";
 
 type FilterTab = "ALL" | "BOTTLES" | "DECANTS" | "BUNDLES";
+type ViewMode = "GRID" | "LIST";
 
 const TABS: { id: FilterTab; label: string }[] = [
   { id: "ALL", label: "All" },
@@ -13,6 +14,11 @@ const TABS: { id: FilterTab; label: string }[] = [
   { id: "DECANTS", label: "Decants" },
   { id: "BUNDLES", label: "Bundles" },
 ];
+
+const VIEW_STORAGE_KEY = "pos.viewMode";
+
+/** Small epsilon so float drift never hides an affordable decant. */
+const ML_EPSILON = 1e-6;
 
 interface ProductGridProps {
   catalog: PosCatalog;
@@ -33,6 +39,19 @@ export function ProductGrid({
 }: ProductGridProps) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<FilterTab>("ALL");
+  const [view, setView] = useState<ViewMode>("GRID");
+
+  // Restore the cashier's last view. Read after mount so server and client
+  // markup match on the first render.
+  useEffect(() => {
+    const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    if (stored === "GRID" || stored === "LIST") setView(stored);
+  }, []);
+
+  const changeView = (next: ViewMode) => {
+    setView(next);
+    window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+  };
 
   const search = query.trim().toLowerCase();
 
@@ -60,30 +79,49 @@ export function ProductGrid({
 
   return (
     <section className="flex min-h-0 flex-col">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by product, brand, or batch ID…"
-          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-gray-900 focus:ring-1 focus:ring-gray-900 sm:max-w-sm"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-gray-900 focus:ring-1 focus:ring-gray-900 xl:max-w-sm"
         />
 
-        <div className="flex gap-1 rounded-lg bg-gray-200/70 p-1">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                tab === t.id
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1 rounded-lg bg-gray-200/70 p-1">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  tab === t.id
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-1 rounded-lg bg-gray-200/70 p-1">
+            <ViewButton
+              active={view === "GRID"}
+              label="Grid view"
+              onClick={() => changeView("GRID")}
             >
-              {t.label}
-            </button>
-          ))}
+              <GridIcon />
+            </ViewButton>
+            <ViewButton
+              active={view === "LIST"}
+              label="List view"
+              onClick={() => changeView("LIST")}
+            >
+              <ListIcon />
+            </ViewButton>
+          </div>
         </div>
       </div>
 
@@ -92,8 +130,8 @@ export function ProductGrid({
           <p className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">
             No products match your search.
           </p>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        ) : view === "GRID" ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
             {visibleBundles.map((bundle) => (
               <BundleCard
                 key={bundle.id}
@@ -115,13 +153,181 @@ export function ProductGrid({
               />
             ))}
           </div>
+        ) : (
+          <ProductList
+            bundles={visibleBundles}
+            variants={visibleVariants}
+            variantsById={variantsById}
+            usage={usage}
+            showBottle={tab !== "DECANTS"}
+            showDecants={tab !== "BOTTLES"}
+            onAddFullBottle={onAddFullBottle}
+            onAddDecant={onAddDecant}
+            onAddBundle={onAddBundle}
+          />
         )}
       </div>
     </section>
   );
 }
 
-// ─── Cards ───────────────────────────────────────────────────────────
+// ─── List view ───────────────────────────────────────────────────────
+
+interface ProductListProps {
+  bundles: CatalogBundle[];
+  variants: CatalogVariant[];
+  variantsById: Map<string, CatalogVariant>;
+  usage: Map<string, StockUsage>;
+  showBottle: boolean;
+  showDecants: boolean;
+  onAddFullBottle: (variant: CatalogVariant) => void;
+  onAddDecant: (variant: CatalogVariant, sizeMl: number) => void;
+  onAddBundle: (bundle: CatalogBundle) => void;
+}
+
+/**
+ * High-density scanning layout: one row per batch, all decant sizes exposed
+ * as inline quick-add buttons so a whole order can be rung up without
+ * opening anything.
+ */
+function ProductList({
+  bundles,
+  variants,
+  variantsById,
+  usage,
+  showBottle,
+  showDecants,
+  onAddFullBottle,
+  onAddDecant,
+  onAddBundle,
+}: ProductListProps) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <table className="w-full min-w-[44rem] text-sm">
+        <thead className="border-b border-gray-100 bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500">
+          <tr>
+            <th className="px-3 py-2 font-medium">Brand</th>
+            <th className="px-3 py-2 font-medium">Product</th>
+            <th className="px-3 py-2 font-medium">Batch ID</th>
+            <th className="px-3 py-2 text-right font-medium">Stock</th>
+            <th className="px-3 py-2 font-medium">Quick add</th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-gray-100">
+          {bundles.map((bundle) => {
+            const addable = bundleAddableCount(bundle, variantsById, usage);
+            return (
+              <tr key={bundle.id} className="bg-amber-50/40">
+                <td className="px-3 py-2 text-[11px] font-semibold uppercase text-amber-600">
+                  Bundle
+                </td>
+                <td className="px-3 py-2">
+                  <span className="block font-medium text-gray-900">{bundle.name}</span>
+                  <span className="block text-[11px] text-gray-500">
+                    {bundle.constituents
+                      .map(
+                        (c) =>
+                          `${c.quantity}× ${
+                            c.itemType === "DECANT" ? `${c.decantSizeMl}ml` : "Bottle"
+                          }`
+                      )
+                      .join(" + ")}
+                  </span>
+                </td>
+                <td className="px-3 py-2 font-mono text-[11px] text-gray-400">{bundle.sku}</td>
+                <td className="px-3 py-2 text-right">
+                  <span className={addable > 0 ? "text-gray-700" : "text-red-500"}>
+                    {addable} set{addable === 1 ? "" : "s"}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    disabled={addable < 1}
+                    onClick={() => onAddBundle(bundle)}
+                    className="rounded-lg border border-amber-600 bg-amber-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    Set · {formatCurrency(bundle.price)}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+
+          {variants.map((variant) => {
+            const remaining = remainingStock(variant, usage);
+            return (
+              <tr key={variant.id}>
+                <td className="px-3 py-2 text-[11px] uppercase tracking-wide text-gray-400">
+                  {variant.brand ?? "—"}
+                </td>
+                <td className="px-3 py-2">
+                  <span className="block font-medium text-gray-900">{variant.productName}</span>
+                  <span className="block text-[11px] text-gray-500">
+                    {variant.fullBottleSizeMl}ml bottle
+                  </span>
+                </td>
+                <td className="px-3 py-2 font-mono text-[11px] text-gray-400">
+                  {variant.variantBatchId}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right text-[11px]">
+                  <span className={remaining.bottles > 0 ? "text-gray-700" : "text-red-500"}>
+                    {remaining.bottles} sealed
+                  </span>
+                  <span className="text-gray-300"> · </span>
+                  <span className={remaining.ml > 0 ? "text-gray-700" : "text-red-500"}>
+                    {formatMl(remaining.ml)}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {showBottle && (
+                      <button
+                        type="button"
+                        disabled={remaining.bottles < 1}
+                        onClick={() => onAddFullBottle(variant)}
+                        className="rounded-lg border border-gray-900 bg-gray-900 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                      >
+                        Bottle · {formatCurrency(variant.fullBottlePrice)}
+                      </button>
+                    )}
+
+                    {showDecants &&
+                      variant.decantOptions.map((option) => {
+                        const affordable = remaining.ml + ML_EPSILON >= option.sizeMl;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            disabled={!affordable}
+                            onClick={() => onAddDecant(variant, option.sizeMl)}
+                            title={affordable ? undefined : "Not enough remaining ml"}
+                            className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs transition hover:border-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-300 disabled:hover:border-gray-100"
+                          >
+                            <span className="font-semibold">{option.sizeMl}ml</span>
+                            <span className="ml-1 text-gray-500">
+                              {formatCurrency(option.price)}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                    {!showBottle && variant.decantOptions.length === 0 && (
+                      <span className="text-[11px] text-gray-400">No options</span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Grid view cards ─────────────────────────────────────────────────
 
 interface VariantCardProps {
   variant: CatalogVariant;
@@ -183,7 +389,7 @@ function VariantCard({
         {decantOptions.length > 0 && (
           <div className="grid grid-cols-2 gap-1.5">
             {decantOptions.map((option) => {
-              const affordable = remaining.ml + 1e-6 >= option.sizeMl;
+              const affordable = remaining.ml + ML_EPSILON >= option.sizeMl;
               return (
                 <button
                   key={option.id}
@@ -194,9 +400,7 @@ function VariantCard({
                   className="flex flex-col items-start rounded-lg border border-gray-200 px-2.5 py-1.5 text-left transition hover:border-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-50 disabled:text-gray-300 disabled:hover:border-gray-100"
                 >
                   <span className="text-xs font-semibold">{option.sizeMl}ml</span>
-                  <span className="text-[11px] text-gray-500">
-                    {formatCurrency(option.price)}
-                  </span>
+                  <span className="text-[11px] text-gray-500">{formatCurrency(option.price)}</span>
                 </button>
               );
             })}
@@ -260,5 +464,55 @@ function StockPill({ label, tone }: { label: string; tone: "neutral" | "empty" }
     >
       {label}
     </span>
+  );
+}
+
+// ─── View toggle ─────────────────────────────────────────────────────
+
+function ViewButton({
+  active,
+  label,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      className={`flex h-7 w-7 items-center justify-center rounded-md transition ${
+        active ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-900"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <rect x="1" y="1" width="6" height="6" rx="1.5" />
+      <rect x="9" y="1" width="6" height="6" rx="1.5" />
+      <rect x="1" y="9" width="6" height="6" rx="1.5" />
+      <rect x="9" y="9" width="6" height="6" rx="1.5" />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <rect x="1" y="2.5" width="14" height="2" rx="1" />
+      <rect x="1" y="7" width="14" height="2" rx="1" />
+      <rect x="1" y="11.5" width="14" height="2" rx="1" />
+    </svg>
   );
 }

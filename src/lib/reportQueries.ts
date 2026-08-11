@@ -11,6 +11,7 @@ import type {
   FinancialSummary,
   SaleDetail,
   SaleRow,
+  WastageRow,
 } from "@/types/reports";
 
 /**
@@ -123,7 +124,14 @@ function buildSaleWhere(filters: SaleFilters): Prisma.SaleWhereInput {
 export async function getSales(filters: SaleFilters): Promise<SaleRow[]> {
   const rows = await prisma.sale.findMany({
     where: buildSaleWhere(filters),
-    include: { lineItems: { select: { quantity: true } } },
+    include: {
+      lineItems: {
+        select: {
+          quantity: true,
+          productVariant: { select: { variantBatchId: true } },
+        },
+      },
+    },
     orderBy: { saleDate: "desc" },
     take: 300,
   });
@@ -142,6 +150,13 @@ export async function getSales(filters: SaleFilters): Promise<SaleRow[]> {
     trackingNumber: s.trackingNumber,
     deliveryAddress: s.deliveryAddress,
     itemCount: s.lineItems.reduce((sum, l) => sum + l.quantity, 0),
+    batchIds: [
+      ...new Set(
+        s.lineItems
+          .map((l) => l.productVariant?.variantBatchId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ],
     total: Number(s.total),
     totalCost: Number(s.totalCost),
     totalProfit: Number(s.totalProfit),
@@ -154,7 +169,7 @@ export async function getSaleDetail(saleId: string): Promise<SaleDetail | null> 
     include: {
       lineItems: {
         include: {
-          productVariant: { include: { product: true } },
+          productVariant: { include: { product: true, supplier: true } },
           bundle: true,
         },
       },
@@ -183,6 +198,13 @@ export async function getSaleDetail(saleId: string): Promise<SaleDetail | null> 
     totalCost: Number(sale.totalCost),
     totalProfit: Number(sale.totalProfit),
     itemCount: sale.lineItems.reduce((sum, l) => sum + l.quantity, 0),
+    batchIds: [
+      ...new Set(
+        sale.lineItems
+          .map((l) => l.productVariant?.variantBatchId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ],
     lineItems: sale.lineItems.map((line) => ({
       id: line.id,
       lineType: line.lineType as "FULL_BOTTLE" | "DECANT" | "BUNDLE",
@@ -194,8 +216,10 @@ export async function getSaleDetail(saleId: string): Promise<SaleDetail | null> 
         line.lineType === "BUNDLE"
           ? line.bundle?.sku ?? ""
           : line.lineType === "DECANT"
-            ? `${line.decantSizeMl}ml decant · ${line.productVariant?.variantBatchId ?? ""}`
-            : `Full bottle · ${line.productVariant?.variantBatchId ?? ""}`,
+            ? `${line.decantSizeMl}ml decant`
+            : "Full bottle",
+      batchId: line.productVariant?.variantBatchId ?? null,
+      supplierName: line.productVariant?.supplier?.name ?? null,
       quantity: line.quantity,
       unitPrice: Number(line.unitPrice),
       lineTotal: Number(line.lineTotal),
@@ -212,6 +236,7 @@ export interface SaleLineExportRow {
   lineType: string;
   itemName: string;
   batchId: string;
+  supplierName: string;
   decantSizeMl: number | null;
   quantity: number;
   unitCost: number;
@@ -230,7 +255,7 @@ export async function getSaleLinesForExport(
     include: {
       lineItems: {
         include: {
-          productVariant: { include: { product: true } },
+          productVariant: { include: { product: true, supplier: true } },
           bundle: true,
         },
       },
@@ -254,6 +279,7 @@ export async function getSaleLinesForExport(
         line.lineType === "BUNDLE"
           ? line.bundle?.sku ?? ""
           : line.productVariant?.variantBatchId ?? "",
+      supplierName: line.productVariant?.supplier?.name ?? "",
       decantSizeMl: line.decantSizeMl,
       quantity: line.quantity,
       unitCost: Number(line.unitCost),
@@ -297,22 +323,12 @@ export async function getFinancialSummary(range: DateRange): Promise<FinancialSu
 
 // ─── Wastage ─────────────────────────────────────────────────────────
 
-export interface WastageRow {
-  id: string;
-  createdAt: string;
-  productName: string;
-  variantBatchId: string;
-  reason: string;
-  mlDeducted: number;
-  bottlesDeducted: number;
-  lossValue: number;
-  note: string | null;
-}
-
 export async function getWastageLogs(range: DateRange): Promise<WastageRow[]> {
   const rows = await prisma.wastageLog.findMany({
     where: { createdAt: toDateFilter(range) },
-    include: { productVariant: { include: { product: true } } },
+    include: {
+      productVariant: { include: { product: true, supplier: true } },
+    },
     orderBy: { createdAt: "desc" },
     take: 500,
   });
@@ -322,11 +338,13 @@ export async function getWastageLogs(range: DateRange): Promise<WastageRow[]> {
     createdAt: row.createdAt.toISOString(),
     productName: row.productVariant.product.name,
     variantBatchId: row.productVariant.variantBatchId,
+    supplierName: row.productVariant.supplier?.name ?? null,
     reason: row.reason,
     mlDeducted: row.mlDeducted,
     bottlesDeducted: row.bottlesDeducted,
     lossValue: Number(row.lossValue),
     note: row.note,
+    voidedAt: row.voidedAt?.toISOString() ?? null,
   }));
 }
 
@@ -340,7 +358,9 @@ export interface WastageReasonTotal {
 export async function getWastageTotals(range: DateRange): Promise<WastageReasonTotal[]> {
   const grouped = await prisma.wastageLog.groupBy({
     by: ["reason"],
-    where: { createdAt: toDateFilter(range) },
+    // Voided write-offs have had their stock and expense reversed, so they
+    // must not count toward the period's loss.
+    where: { createdAt: toDateFilter(range), voidedAt: null },
     _sum: { lossValue: true, mlDeducted: true },
     _count: { _all: true },
   });

@@ -4,7 +4,7 @@ import { formatCurrency } from "@/lib/format";
 import { formatDateTime } from "@/lib/dateRange";
 import { paymentLabel } from "@/lib/paymentMethods";
 import { channelLabel } from "@/lib/channels";
-import { DELIVERY_LABELS } from "@/lib/delivery";
+import { DELIVERY_LABELS, isFulfilmentOrder } from "@/lib/delivery";
 import { PrintButton } from "@/components/PrintButton";
 import type { DeliveryStatusValue } from "@/types/reports";
 
@@ -31,7 +31,7 @@ export default async function ReceiptPage({
     include: {
       lineItems: {
         include: {
-          productVariant: { include: { product: true } },
+          productVariant: { include: { product: true, supplier: true } },
           bundle: true,
         },
       },
@@ -52,12 +52,16 @@ export default async function ReceiptPage({
         : line.lineType === "FULL_BOTTLE"
           ? `Full bottle ${line.productVariant?.fullBottleSizeMl ?? ""}ml`
           : "Bundle set",
+    batchId: line.productVariant?.variantBatchId ?? null,
+    supplierName: line.productVariant?.supplier?.name ?? null,
     quantity: line.quantity,
     unitPrice: Number(line.unitPrice),
     lineTotal: Number(line.lineTotal),
   }));
 
-  const isDelivery = sale.deliveryStatus !== "NOT_REQUIRED";
+  // Only an actual fulfilment order prints a delivery slip — a walk-in sale
+  // is settled at the counter and has nothing pending.
+  const isDelivery = isFulfilmentOrder(sale.deliveryStatus as DeliveryStatusValue);
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
@@ -101,6 +105,12 @@ export default async function ReceiptPage({
                 <td className="py-1 pr-1">
                   <span className="block">{line.name}</span>
                   <span className="block text-[9px]">{line.detail}</span>
+                  {line.batchId && (
+                    <span className="block text-[8px]">
+                      Batch: {line.batchId}
+                      {line.supplierName && ` | ${line.supplierName}`}
+                    </span>
+                  )}
                 </td>
                 <td className="py-1 text-center">{line.quantity}</td>
                 <td className="py-1 text-right">{formatCurrency(line.lineTotal)}</td>

@@ -44,6 +44,8 @@ export interface SaleRow {
   trackingNumber: string | null;
   deliveryAddress: string | null;
   itemCount: number;
+  /** Distinct batch IDs in this sale, for at-a-glance traceability. */
+  batchIds: string[];
   total: number;
   totalCost: number;
   totalProfit: number;
@@ -54,6 +56,9 @@ export interface SaleLineDetail {
   lineType: "FULL_BOTTLE" | "DECANT" | "BUNDLE";
   name: string;
   detail: string;
+  /** Originating batch — null for bundle lines, which span several batches. */
+  batchId: string | null;
+  supplierName: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -78,6 +83,21 @@ export interface FinancialSummary {
   netProfit: number;
   saleCount: number;
   averageOrderValue: number;
+}
+
+export interface WastageRow {
+  id: string;
+  createdAt: string; // ISO
+  productName: string;
+  variantBatchId: string;
+  supplierName: string | null;
+  reason: string;
+  mlDeducted: number;
+  bottlesDeducted: number;
+  lossValue: number;
+  note: string | null;
+  /** Non-null once reverted: stock restored and the expense withdrawn. */
+  voidedAt: string | null;
 }
 
 export interface CustomerBreakdownRow {

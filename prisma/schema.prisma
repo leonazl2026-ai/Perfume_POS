@@ -411,9 +411,13 @@ model WastageLog {
 
   note String?
 
-  /// The auto-generated expense row, if one was created.
+  /// The auto-generated expense row, if one was created. Cleared on void.
   expenseId String?  @unique
   expense   Expense? @relation(fields: [expenseId], references: [id])
+
+  /// Set when the write-off was reverted; stock and the expense are undone
+  /// but the row is kept so the correction stays auditable.
+  voidedAt DateTime?
 
   createdAt DateTime @default(now())
 

@@ -292,15 +292,11 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
 
     const saleNumber = await generateSaleNumber(tx);
 
-    // A sale counts as a delivery order if the cashier ticked the box or
-    // filled in any fulfilment field — so a typed address is never lost
-    // just because the toggle was missed.
-    const isDelivery = Boolean(
-      input.isDelivery ||
-        input.deliveryAddress?.trim() ||
-        input.courier?.trim() ||
-        input.trackingNumber?.trim()
-    );
+    // Only an explicitly ticked "Delivery order" enters the fulfilment queue.
+    // A stored address prefilled from the CRM must not silently turn a
+    // counter sale into a Pending delivery — walk-ins settle immediately and
+    // are recorded as NOT_REQUIRED, which reads as "Completed".
+    const isDelivery = Boolean(input.isDelivery);
 
     const orderChannel = (input.orderChannel ?? DEFAULT_ORDER_CHANNEL) as OrderChannelValue;
 
@@ -323,9 +319,11 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
         paymentMethod: input.paymentMethod,
         notes: input.notes,
         deliveryStatus: isDelivery ? DeliveryStatus.PENDING : DeliveryStatus.NOT_REQUIRED,
-        deliveryAddress: input.deliveryAddress?.trim() || null,
-        courier: input.courier?.trim() || null,
-        trackingNumber: input.trackingNumber?.trim() || null,
+        // Fulfilment details are only stored for actual delivery orders, so a
+        // counter sale never carries a stale address onto its receipt.
+        deliveryAddress: isDelivery ? input.deliveryAddress?.trim() || null : null,
+        courier: isDelivery ? input.courier?.trim() || null : null,
+        trackingNumber: isDelivery ? input.trackingNumber?.trim() || null : null,
         subtotal,
         discount,
         tax,

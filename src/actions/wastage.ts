@@ -161,3 +161,66 @@ export async function logWastage(rawInput: unknown): Promise<ActionResult<{ loss
     return actionError("Could not record the loss.");
   }
 }
+
+/**
+ * Reverts a write-off: puts the stock back, removes the auto-generated
+ * expense so net profit recovers, and marks the log voided.
+ *
+ * The log row is kept rather than deleted — a correction is itself a fact
+ * worth auditing. All three effects share one transaction, so stock can
+ * never be restored without the expense also being withdrawn.
+ */
+export async function voidWastage(wastageId: string): Promise<ActionResult<null>> {
+  try {
+    await requireAdmin();
+
+    await prisma.$transaction(async (tx) => {
+      const log = await tx.wastageLog.findUnique({ where: { id: wastageId } });
+      if (!log) throw new NotFoundError("That wastage entry no longer exists.");
+      if (log.voidedAt) throw new NotFoundError("That entry is already voided.");
+
+      await tx.productVariant.update({
+        where: { id: log.productVariantId },
+        data: {
+          decantActiveRemainingMl: { increment: log.mlDeducted },
+          unopenedBottles: { increment: log.bottlesDeducted },
+        },
+      });
+
+      // Detach before deleting: WastageLog.expenseId is a unique FK, so the
+      // expense cannot be removed while the log still points at it.
+      await tx.wastageLog.update({
+        where: { id: wastageId },
+        data: { voidedAt: new Date(), expenseId: null },
+      });
+
+      if (log.expenseId) {
+        await tx.expense.delete({ where: { id: log.expenseId } });
+      }
+
+      await tx.inventoryTransaction.create({
+        data: {
+          productVariantId: log.productVariantId,
+          type: InventoryTxType.VOID_REVERSAL,
+          bottlesDelta: log.bottlesDeducted,
+          mlDelta: log.mlDeducted,
+          reference: `Reverted wastage (${wastageLabel(log.reason)})`,
+        },
+      });
+    });
+
+    revalidatePath("/admin/wastage");
+    revalidatePath("/admin/products");
+    revalidatePath("/admin/expenses");
+    revalidatePath("/admin/sales");
+    revalidatePath("/admin");
+    revalidatePath("/pos");
+
+    return actionOk(null);
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return actionError(error.message);
+    if (error instanceof NotFoundError) return actionError(error.message);
+    console.error("[voidWastage]", error);
+    return actionError("Could not void that entry.");
+  }
+}

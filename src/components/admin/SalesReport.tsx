@@ -310,6 +310,16 @@ export function SalesReport({
                               {formatDateTime(new Date(sale.saleDate))} · {sale.itemCount} item
                               {sale.itemCount === 1 ? "" : "s"}
                             </span>
+                            {sale.batchIds.length > 0 && (
+                              <span
+                                className="block truncate font-mono text-[10px] text-gray-400"
+                                title={sale.batchIds.join(", ")}
+                              >
+                                {sale.batchIds.slice(0, 2).join(", ")}
+                                {sale.batchIds.length > 2 &&
+                                  ` +${sale.batchIds.length - 2}`}
+                              </span>
+                            )}
                           </button>
                         </td>
 

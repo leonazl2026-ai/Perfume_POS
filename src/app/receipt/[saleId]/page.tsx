@@ -6,6 +6,8 @@ import { paymentLabel } from "@/lib/paymentMethods";
 import { channelLabel } from "@/lib/channels";
 import { DELIVERY_LABELS, isFulfilmentOrder } from "@/lib/delivery";
 import { PrintButton } from "@/components/PrintButton";
+import { isLanguage, translator } from "@/lib/i18n";
+import { getLanguage } from "@/lib/i18n/server";
 import type { DeliveryStatusValue } from "@/types/reports";
 
 export const dynamic = "force-dynamic";
@@ -21,10 +23,20 @@ const SHOP_CONTACT = process.env.NEXT_PUBLIC_SHOP_CONTACT ?? "";
  */
 export default async function ReceiptPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ saleId: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { saleId } = await params;
+  const query = await searchParams;
+
+  // Follows the app language, with ?lang=en|mm to override for one print —
+  // useful when a bilingual shop prints in the customer's language.
+  const cookieLang = await getLanguage();
+  const requested = typeof query.lang === "string" ? query.lang : undefined;
+  const lang = isLanguage(requested) ? requested : cookieLang;
+  const t = translator(lang);
 
   const sale = await prisma.sale.findUnique({
     where: { id: saleId },
@@ -71,9 +83,9 @@ export default async function ReceiptPage({
       {/* Toolbar is hidden by the print stylesheet below. */}
       <div className="mx-auto mb-4 flex max-w-[80mm] items-center justify-between gap-2 print:hidden">
         <a href="/pos" className="text-xs font-medium text-gray-600 hover:text-gray-900">
-          ← Back to POS
+          ← {t("receipt.backToPos")}
         </a>
-        <PrintButton />
+        <PrintButton label={t("common.print")} />
       </div>
 
       <article className="mx-auto w-[80mm] bg-white p-4 text-[11px] leading-snug text-black shadow print:w-full print:max-w-none print:p-0 print:shadow-none">
@@ -88,18 +100,21 @@ export default async function ReceiptPage({
         </header>
 
         <div className="mb-2 border-y border-dashed border-black py-1.5 text-[10px]">
-          <Line label="Customer" value={sale.customerName ?? "Walk-in"} />
-          {sale.customerPhone && <Line label="Phone" value={sale.customerPhone} />}
-          <Line label="Payment" value={paymentLabel(sale.paymentMethod)} />
-          <Line label="Channel" value={channelLabel(sale.orderChannel)} />
+          <Line
+            label={t("pos.customer")}
+            value={sale.customerName ?? t("pos.walkIn")}
+          />
+          {sale.customerPhone && <Line label={t("pos.phone")} value={sale.customerPhone} />}
+          <Line label={t("pos.payment")} value={paymentLabel(sale.paymentMethod)} />
+          <Line label={t("pos.orderChannel")} value={channelLabel(sale.orderChannel)} />
         </div>
 
         <table className="w-full">
           <thead>
             <tr className="border-b border-dashed border-black text-left">
-              <th className="pb-1 font-semibold">Item</th>
-              <th className="pb-1 text-center font-semibold">Qty</th>
-              <th className="pb-1 text-right font-semibold">Amount</th>
+              <th className="pb-1 font-semibold">{t("receipt.item")}</th>
+              <th className="pb-1 text-center font-semibold">{t("common.quantity")}</th>
+              <th className="pb-1 text-right font-semibold">{t("common.total")}</th>
             </tr>
           </thead>
           <tbody>
@@ -123,9 +138,12 @@ export default async function ReceiptPage({
         </table>
 
         <dl className="mt-2 border-t border-dashed border-black pt-1.5">
-          <Line label="Subtotal" value={formatCurrency(Number(sale.subtotal))} />
+          <Line label={t("common.subtotal")} value={formatCurrency(Number(sale.subtotal))} />
           {Number(sale.discount) > 0 && (
-            <Line label="Discount" value={`- ${formatCurrency(Number(sale.discount))}`} />
+            <Line
+              label={t("common.discount")}
+              value={`- ${formatCurrency(Number(sale.discount))}`}
+            />
           )}
           {Number(sale.loyaltyDiscount) > 0 && (
             <Line
@@ -134,10 +152,10 @@ export default async function ReceiptPage({
             />
           )}
           {Number(sale.tax) > 0 && (
-            <Line label="Tax" value={formatCurrency(Number(sale.tax))} />
+            <Line label={t("common.tax")} value={formatCurrency(Number(sale.tax))} />
           )}
           <div className="mt-1 flex justify-between border-t border-black pt-1 text-xs font-bold">
-            <dt>TOTAL</dt>
+            <dt className="uppercase">{t("common.total")}</dt>
             <dd>{formatCurrency(Number(sale.total))}</dd>
           </div>
         </dl>
@@ -145,16 +163,16 @@ export default async function ReceiptPage({
         {/* Loyalty summary — only when this sale actually moved points. */}
         {showLoyalty && (
           <section className="mt-3 border-t border-dashed border-black pt-2">
-            <h2 className="mb-1 text-[10px] font-bold uppercase">Loyalty points</h2>
+            <h2 className="mb-1 text-[10px] font-bold uppercase">{t("loyalty.title")}</h2>
             {sale.pointsRedeemed > 0 && (
-              <Line label="Points redeemed" value={`-${sale.pointsRedeemed}`} />
+              <Line label={t("loyalty.redeemed")} value={`-${sale.pointsRedeemed}`} />
             )}
             {sale.pointsEarned > 0 && (
-              <Line label="Points earned" value={`+${sale.pointsEarned}`} />
+              <Line label={t("loyalty.earned")} value={`+${sale.pointsEarned}`} />
             )}
             {sale.pointsBalanceAfter !== null && (
               <div className="flex justify-between font-bold">
-                <dt>New balance</dt>
+                <dt>{t("loyalty.newBalance")}</dt>
                 <dd>{sale.pointsBalanceAfter} pts</dd>
               </div>
             )}
@@ -163,9 +181,11 @@ export default async function ReceiptPage({
 
         {isDelivery && (
           <section className="mt-3 border-t border-dashed border-black pt-2">
-            <h2 className="mb-1 text-[10px] font-bold uppercase">Delivery slip</h2>
+            <h2 className="mb-1 text-[10px] font-bold uppercase">
+              {t("receipt.deliverySlip")}
+            </h2>
             <Line
-              label="Status"
+              label={t("receipt.status")}
               value={DELIVERY_LABELS[sale.deliveryStatus as DeliveryStatusValue]}
             />
             {sale.courier && <Line label="Courier" value={sale.courier} />}
@@ -177,7 +197,7 @@ export default async function ReceiptPage({
         )}
 
         <footer className="mt-3 border-t border-dashed border-black pt-2 text-center text-[10px]">
-          <p>Thank you!</p>
+          <p>{t("receipt.thankYou")}</p>
         </footer>
       </article>
 

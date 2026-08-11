@@ -20,6 +20,8 @@ import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { DEFAULT_PAYMENT_METHOD } from "@/lib/paymentMethods";
 import { DEFAULT_ORDER_CHANNEL } from "@/lib/channels";
 import { maxRedeemablePoints, resolveRedemption } from "@/lib/loyalty";
+import { useI18n } from "@/components/i18n/I18nProvider";
+import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import type { LoyaltyConfig } from "@/lib/settings";
 import type { CatalogBundle, CatalogVariant, PosCatalog } from "@/types/catalog";
 import type { CustomerSuggestion } from "@/types/crm";
@@ -55,6 +57,7 @@ export function PosTerminal({
   loyalty: LoyaltyConfig;
 }) {
   const router = useRouter();
+  const { t } = useI18n();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [meta, setMeta] = useState<CheckoutMeta>(EMPTY_META);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -231,19 +234,23 @@ export function PosTerminal({
 
   return (
     <div className="flex h-screen flex-col bg-gray-50">
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
-        <div>
-          <h1 className="text-base font-semibold text-gray-900">Perfume & Decant POS</h1>
+      <header className="flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-semibold text-gray-900">{t("pos.title")}</h1>
           <p className="text-xs text-gray-500">
             {catalog.variants.length} batches · {catalog.bundles.length} bundles
           </p>
         </div>
-        <a
-          href="/admin"
-          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-gray-900 hover:text-gray-900"
-        >
-          Admin
-        </a>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <LanguageSwitcher compact />
+          <a
+            href="/admin"
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-gray-900 hover:text-gray-900"
+          >
+            {t("pos.admin")}
+          </a>
+        </div>
       </header>
 
       {/* Cart takes ~36% but never drops below 400px, so customer inputs,
@@ -262,7 +269,7 @@ export function PosTerminal({
           {lastSale && (
             <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
               <span className="min-w-0 truncate text-xs text-emerald-800">
-                Last sale {lastSale.saleNumber}
+                {t("pos.lastSale")} {lastSale.saleNumber}
                 {lastSale.pointsRedeemed > 0 && ` · −${lastSale.pointsRedeemed} pts`}
                 {lastSale.pointsEarned > 0 && ` · +${lastSale.pointsEarned} pts`}
                 {lastSale.pointsBalance !== null && ` · balance ${lastSale.pointsBalance}`}
@@ -274,7 +281,7 @@ export function PosTerminal({
                   rel="noopener noreferrer"
                   className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-emerald-700"
                 >
-                  Print receipt
+                  {t("pos.printReceipt")}
                 </a>
                 <button
                   type="button"

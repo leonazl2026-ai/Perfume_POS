@@ -3,16 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { bundleAddableCount, remainingStock, type StockUsage } from "@/lib/cart";
 import { formatCurrency, formatMl } from "@/lib/format";
+import { useI18n } from "@/components/i18n/I18nProvider";
+import type { TranslationKey } from "@/lib/i18n";
 import type { CatalogBundle, CatalogVariant, PosCatalog } from "@/types/catalog";
 
 type FilterTab = "ALL" | "BOTTLES" | "DECANTS" | "BUNDLES";
 type ViewMode = "GRID" | "LIST";
 
-const TABS: { id: FilterTab; label: string }[] = [
-  { id: "ALL", label: "All" },
-  { id: "BOTTLES", label: "Full Bottles" },
-  { id: "DECANTS", label: "Decants" },
-  { id: "BUNDLES", label: "Bundles" },
+const TABS: { id: FilterTab; key: TranslationKey }[] = [
+  { id: "ALL", key: "common.all" },
+  { id: "BOTTLES", key: "pos.fullBottles" },
+  { id: "DECANTS", key: "pos.decants" },
+  { id: "BUNDLES", key: "pos.bundles" },
 ];
 
 const VIEW_STORAGE_KEY = "pos.viewMode";
@@ -37,6 +39,7 @@ export function ProductGrid({
   onAddDecant,
   onAddBundle,
 }: ProductGridProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<FilterTab>("ALL");
   const [view, setView] = useState<ViewMode>("GRID");
@@ -84,24 +87,24 @@ export function ProductGrid({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by product, brand, or batch ID…"
+          placeholder={t("pos.search")}
           className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-gray-900 focus:ring-1 focus:ring-gray-900 xl:max-w-sm"
         />
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1 rounded-lg bg-gray-200/70 p-1">
-            {TABS.map((t) => (
+            {TABS.map((tabOption) => (
               <button
-                key={t.id}
+                key={tabOption.id}
                 type="button"
-                onClick={() => setTab(t.id)}
+                onClick={() => setTab(tabOption.id)}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                  tab === t.id
+                  tab === tabOption.id
                     ? "bg-white text-gray-900 shadow-sm"
                     : "text-gray-600 hover:text-gray-900"
                 }`}
               >
-                {t.label}
+                {t(tabOption.key)}
               </button>
             ))}
           </div>
@@ -109,14 +112,14 @@ export function ProductGrid({
           <div className="flex gap-1 rounded-lg bg-gray-200/70 p-1">
             <ViewButton
               active={view === "GRID"}
-              label="Grid view"
+              label={t("pos.gridView")}
               onClick={() => changeView("GRID")}
             >
               <GridIcon />
             </ViewButton>
             <ViewButton
               active={view === "LIST"}
-              label="List view"
+              label={t("pos.listView")}
               onClick={() => changeView("LIST")}
             >
               <ListIcon />
@@ -128,7 +131,7 @@ export function ProductGrid({
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         {isEmpty ? (
           <p className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">
-            No products match your search.
+            {t("pos.noMatch")}
           </p>
         ) : view === "GRID" ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
@@ -201,16 +204,18 @@ function ProductList({
   onAddDecant,
   onAddBundle,
 }: ProductListProps) {
+  const { t } = useI18n();
+
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
       <table className="w-full min-w-[44rem] text-sm">
         <thead className="border-b border-gray-100 bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500">
           <tr>
-            <th className="px-3 py-2 font-medium">Brand</th>
-            <th className="px-3 py-2 font-medium">Product</th>
-            <th className="px-3 py-2 font-medium">Batch ID</th>
-            <th className="px-3 py-2 text-right font-medium">Stock</th>
-            <th className="px-3 py-2 font-medium">Quick add</th>
+            <th className="px-3 py-2 font-medium">{t("pos.brand")}</th>
+            <th className="px-3 py-2 font-medium">{t("pos.product")}</th>
+            <th className="px-3 py-2 font-medium">{t("pos.batchId")}</th>
+            <th className="px-3 py-2 text-right font-medium">{t("common.stock")}</th>
+            <th className="px-3 py-2 font-medium">{t("pos.quickAdd")}</th>
           </tr>
         </thead>
 
@@ -273,7 +278,7 @@ function ProductList({
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right text-[11px]">
                   <span className={remaining.bottles > 0 ? "text-gray-700" : "text-red-500"}>
-                    {remaining.bottles} sealed
+                    {remaining.bottles} {t("pos.sealed")}
                   </span>
                   <span className="text-gray-300"> · </span>
                   <span className={remaining.ml > 0 ? "text-gray-700" : "text-red-500"}>

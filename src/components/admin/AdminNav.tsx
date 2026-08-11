@@ -2,18 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useI18n } from "@/components/i18n/I18nProvider";
+import type { TranslationKey } from "@/lib/i18n";
 
-const LINKS = [
-  { href: "/admin", label: "Overview", exact: true },
-  { href: "/admin/products", label: "Products & Stock" },
-  { href: "/admin/bundles", label: "Bundle Builder" },
-  { href: "/admin/suppliers", label: "Suppliers" },
-  { href: "/admin/customers", label: "Customers" },
-  { href: "/admin/sales", label: "Sales & Reports" },
-  { href: "/admin/analytics", label: "Analytics" },
-  { href: "/admin/expenses", label: "Expenses" },
-  { href: "/admin/wastage", label: "Wastage Log" },
-  { href: "/admin/settings", label: "Settings" },
+const LINKS: { href: string; key: TranslationKey; exact?: boolean }[] = [
+  { href: "/admin", key: "nav.overview", exact: true },
+  { href: "/admin/products", key: "nav.products" },
+  { href: "/admin/bundles", key: "nav.bundles" },
+  { href: "/admin/suppliers", key: "nav.suppliers" },
+  { href: "/admin/customers", key: "nav.customers" },
+  { href: "/admin/sales", key: "nav.sales" },
+  { href: "/admin/analytics", key: "nav.analytics" },
+  { href: "/admin/expenses", key: "nav.expenses" },
+  { href: "/admin/wastage", key: "nav.wastage" },
+  { href: "/admin/settings", key: "nav.settings" },
+  { href: "/admin/help", key: "nav.help" },
 ];
 
 export function AdminNav({
@@ -22,11 +25,14 @@ export function AdminNav({
   orientation?: "vertical" | "horizontal";
 }) {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <nav
       className={
-        orientation === "vertical" ? "flex flex-col gap-0.5" : "flex flex-row gap-1 whitespace-nowrap"
+        orientation === "vertical"
+          ? "flex flex-col gap-0.5"
+          : "flex flex-row gap-1 whitespace-nowrap"
       }
     >
       {LINKS.map((link) => {
@@ -41,7 +47,7 @@ export function AdminNav({
                 : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
             }`}
           >
-            {link.label}
+            {t(link.key)}
           </Link>
         );
       })}

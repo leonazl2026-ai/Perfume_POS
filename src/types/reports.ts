@@ -38,7 +38,7 @@ export interface SaleRow {
   customerPhone: string | null;
   paymentMethod: string;
   orderChannel: OrderChannelValue;
-  status: "COMPLETED" | "VOIDED";
+  status: "COMPLETED" | "VOIDED" | "RETURNED";
   deliveryStatus: DeliveryStatusValue;
   courier: string | null;
   trackingNumber: string | null;
@@ -83,6 +83,13 @@ export interface FinancialSummary {
   netProfit: number;
   saleCount: number;
   averageOrderValue: number;
+}
+
+export interface HandleReturnResult {
+  condition: "RETURNED_GOOD" | "RETURNED_DAMAGED";
+  /** Value written off; 0 for a good-condition return. */
+  lossValue: number;
+  restockedVariants: number;
 }
 
 export interface WastageRow {

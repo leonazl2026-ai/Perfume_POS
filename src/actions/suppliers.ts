@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { UnauthorizedError } from "@/lib/errors";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { supplierFormSchema } from "@/lib/validators";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
 import type { DuplicateSupplierMatch, SupplierRow } from "@/types/admin";
@@ -84,7 +84,7 @@ export async function upsertSupplier(
   rawInput: SupplierFormInput
 ): Promise<ActionResult<{ id: string; duplicates: DuplicateSupplierMatch[] }>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_SUPPLIERS");
     const input = supplierFormSchema.parse(rawInput);
 
     const duplicates = await findDuplicateSuppliers(
@@ -131,7 +131,7 @@ export async function setSupplierActive(
   isActive: boolean
 ): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_SUPPLIERS");
     await prisma.supplier.update({ where: { id: supplierId }, data: { isActive } });
     revalidateSupplierViews();
     return actionOk(null);
@@ -143,7 +143,7 @@ export async function setSupplierActive(
 /** Deletes only when no batch references the supplier; otherwise deactivates. */
 export async function deleteSupplier(supplierId: string): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_SUPPLIERS");
 
     const linked = await prisma.productVariant.count({ where: { supplierId } });
     if (linked > 0) {
@@ -164,7 +164,7 @@ export async function deleteSupplier(supplierId: string): Promise<ActionResult<n
 
 /** Used by the supplier picker in the batch form. */
 export async function searchSuppliers(query: string): Promise<SupplierRow[]> {
-  await requireAdmin();
+  await requirePermission("MANAGE_SUPPLIERS");
 
   const search = query.trim();
   const rows = await prisma.supplier.findMany({

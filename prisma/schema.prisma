@@ -39,6 +39,13 @@ enum WastageReason {
   EVAPORATION
   DAMAGED // damaged or broken bottle
   TESTER // tester / promotional sample
+  DELIVERY_DAMAGE // returned damaged by the courier
+}
+
+/// Condition a returned delivery came back in.
+enum ReturnCondition {
+  RETURNED_GOOD // resellable — goes back into the batch
+  RETURNED_DAMAGED // written off as wastage, never restocked
 }
 
 /// Where the order came from — set at the till, used for channel analytics.
@@ -67,9 +74,13 @@ enum LoyaltyType {
   REVERTED
 }
 
+/// Only COMPLETED counts toward revenue and profit. VOIDED and RETURNED are
+/// both excluded from every financial aggregate, which is what keeps returned
+/// orders out of gross sales without special-casing each report.
 enum SaleStatus {
   COMPLETED
   VOIDED
+  RETURNED
 }
 
 /// Operational fulfilment state. Shipping *money* is not tracked here —
@@ -316,6 +327,12 @@ model Sale {
   shippedAt       DateTime?
   deliveredAt     DateTime?
 
+  // Return handling
+  returnCondition ReturnCondition?
+  /// Courier claim reference, damage description, etc.
+  returnNotes     String?
+  returnedAt      DateTime?
+
   createdAt DateTime @default(now())
 
   lineItems   SaleLineItem[]
@@ -474,6 +491,33 @@ model LoyaltyLog {
   @@index([customerId])
   @@index([saleId])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// Users & permissions
+// ─────────────────────────────────────────────
+
+model User {
+  id       String @id @default(cuid())
+  name     String
+  username String @unique
+  /// scrypt hash — never the plaintext. See lib/password.ts.
+  passwordHash String
+
+  /// ADMIN | STAFF | CUSTOM. ADMIN implies every permission regardless of
+  /// the list below, so an admin can never lock themselves out.
+  role String @default("STAFF")
+
+  /// JSON array of permission keys. SQLite has no array type, so this is a
+  /// serialised string parsed in lib/permissions.ts.
+  permissions String @default("[]")
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
 }
 
 // ─────────────────────────────────────────────

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { bundleFormSchema, setBundleActiveSchema } from "@/lib/validators";
 import { UnauthorizedError } from "@/lib/errors";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
 
 export type BundleFormInput = z.input<typeof bundleFormSchema>;
@@ -40,7 +40,7 @@ export async function upsertBundle(
   rawInput: BundleFormInput
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_BUNDLES");
     const input = bundleFormSchema.parse(rawInput);
 
     // Every referenced batch must exist before we rewrite the item list.
@@ -98,7 +98,7 @@ export async function setBundleActive(
   rawInput: z.input<typeof setBundleActiveSchema>
 ): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_BUNDLES");
     const input = setBundleActiveSchema.parse(rawInput);
     await prisma.bundle.update({
       where: { id: input.bundleId },
@@ -117,7 +117,7 @@ export async function setBundleActive(
  */
 export async function deleteBundle(bundleId: string): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_BUNDLES");
     const soldCount = await prisma.saleLineItem.count({ where: { bundleId } });
     if (soldCount > 0) {
       await prisma.bundle.update({ where: { id: bundleId }, data: { isActive: false } });

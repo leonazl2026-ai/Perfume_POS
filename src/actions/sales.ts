@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { createSaleSchema, updateDeliverySchema } from "@/lib/validators";
 import { getSaleDetail } from "@/lib/reportQueries";
 import { InsufficientStockError, NotFoundError, UnauthorizedError } from "@/lib/errors";
-import { isAuthenticated, requireAdmin } from "@/lib/session";
+import { isAuthenticated, requirePermission } from "@/lib/session";
 import { linkCustomerForSale, recalculateCustomer } from "@/lib/customers";
 import { getSettings, loyaltyConfig } from "@/lib/settings";
 import {
@@ -467,9 +467,16 @@ export async function createSale(rawInput: CreateSaleInput): Promise<CreateSaleR
  */
 export async function checkoutAction(input: CreateSaleInput): Promise<CheckoutResult> {
   try {
+    // The till is a permissioned surface now — a server action is reachable
+    // regardless of what the UI renders, so the check lives here too.
+    await requirePermission("POS_ACCESS");
+
     const data = await createSale(input);
     return { ok: true, data };
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return { ok: false, error: error.message };
+    }
     if (error instanceof InsufficientStockError || error instanceof NotFoundError) {
       return { ok: false, error: error.message };
     }
@@ -500,7 +507,7 @@ export async function updateDelivery(
   rawInput: unknown
 ): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("VIEW_SALES");
     const input = updateDeliverySchema.parse(rawInput);
 
     const sale = await prisma.sale.findUnique({ where: { id: input.saleId } });
@@ -542,7 +549,7 @@ export async function updateDelivery(
  */
 export async function bulkUpdateDelivery(rawInput: unknown): Promise<ActionResult<number>> {
   try {
-    await requireAdmin();
+    await requirePermission("VIEW_SALES");
     const input = bulkDeliverySchema.parse(rawInput);
 
     const status = input.deliveryStatus as DeliveryStatus;
@@ -582,7 +589,7 @@ export async function bulkUpdateDelivery(rawInput: unknown): Promise<ActionResul
  */
 export async function voidSale(saleId: string, reason?: string): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("VIEW_SALES");
 
     await prisma.$transaction(async (tx) => {
       const sale = await tx.sale.findUnique({ where: { id: saleId } });

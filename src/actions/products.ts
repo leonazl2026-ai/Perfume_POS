@@ -13,7 +13,7 @@ import {
   variantFormSchema,
 } from "@/lib/validators";
 import { UnauthorizedError } from "@/lib/errors";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
 
 export type VariantFormInput = z.input<typeof variantFormSchema>;
@@ -51,7 +51,7 @@ export async function upsertProductVariant(
   rawInput: VariantFormInput
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_PRODUCTS");
     const input = variantFormSchema.parse(rawInput);
     const costPerMl = calcCostPerMl(input.bottleCost, input.fullBottleSizeMl);
 
@@ -151,7 +151,7 @@ export async function stockInBottles(
   rawInput: z.input<typeof stockInSchema>
 ): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_PRODUCTS");
     const input = stockInSchema.parse(rawInput);
 
     await prisma.$transaction(async (tx) => {
@@ -185,7 +185,7 @@ export async function openBottleForDecanting(
   rawInput: z.input<typeof openBottleSchema>
 ): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_PRODUCTS");
     const input = openBottleSchema.parse(rawInput);
 
     await prisma.$transaction(async (tx) => {
@@ -230,7 +230,7 @@ export async function adjustDecantMl(
   rawInput: z.input<typeof adjustMlSchema>
 ): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_PRODUCTS");
     const input = adjustMlSchema.parse(rawInput);
 
     await prisma.$transaction(async (tx) => {
@@ -264,7 +264,7 @@ export async function setVariantActive(
   rawInput: z.input<typeof setVariantActiveSchema>
 ): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_PRODUCTS");
     const input = setVariantActiveSchema.parse(rawInput);
     await prisma.productVariant.update({
       where: { id: input.variantId },

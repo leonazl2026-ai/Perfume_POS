@@ -1,12 +1,19 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PosTerminal } from "@/components/pos/PosTerminal";
 import { getPosCatalog } from "@/lib/queries";
 import { getSettings, loyaltyConfig } from "@/lib/settings";
+import { getCurrentUser } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 
 // Stock levels must always reflect the latest sale, never a cached render.
 export const dynamic = "force-dynamic";
 
 export default async function PosPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login?next=/pos");
+  if (!hasPermission(user, "POS_ACCESS")) redirect("/admin/denied");
+
   const [catalog, settings] = await Promise.all([getPosCatalog(), getSettings()]);
 
   if (catalog.variants.length === 0 && catalog.bundles.length === 0) {
@@ -30,5 +37,13 @@ export default async function PosPage() {
     );
   }
 
-  return <PosTerminal catalog={catalog} loyalty={loyaltyConfig(settings)} />;
+  return (
+    <PosTerminal
+      catalog={catalog}
+      loyalty={loyaltyConfig(settings)}
+      userName={user.name}
+      // Margin figures are hidden from cashiers who cannot see analytics.
+      canViewProfit={hasPermission(user, "VIEW_ANALYTICS")}
+    />
+  );
 }

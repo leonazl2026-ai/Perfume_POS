@@ -107,7 +107,12 @@ function buildSaleWhere(filters: SaleFilters): Prisma.SaleWhereInput {
 
   return {
     saleDate: toDateFilter(filters.range),
-    ...(filters.includeVoided ? {} : { status: "COMPLETED" as const }),
+    // Returned orders stay in the operational list — staff need to see and
+    // trace them — but they are excluded from every financial aggregate,
+    // which filters on COMPLETED alone.
+    ...(filters.includeVoided
+      ? {}
+      : { status: { in: ["COMPLETED", "RETURNED"] as const } }),
     ...(filters.deliveryStatus ? { deliveryStatus: filters.deliveryStatus } : {}),
     ...(search
       ? {
@@ -144,7 +149,7 @@ export async function getSales(filters: SaleFilters): Promise<SaleRow[]> {
     customerPhone: s.customerPhone,
     paymentMethod: s.paymentMethod,
     orderChannel: s.orderChannel as OrderChannelValue,
-    status: s.status as "COMPLETED" | "VOIDED",
+    status: s.status as "COMPLETED" | "VOIDED" | "RETURNED",
     deliveryStatus: s.deliveryStatus as DeliveryStatusValue,
     courier: s.courier,
     trackingNumber: s.trackingNumber,
@@ -185,7 +190,7 @@ export async function getSaleDetail(saleId: string): Promise<SaleDetail | null> 
     customerPhone: sale.customerPhone,
     paymentMethod: sale.paymentMethod,
     orderChannel: sale.orderChannel as OrderChannelValue,
-    status: sale.status as "COMPLETED" | "VOIDED",
+    status: sale.status as "COMPLETED" | "VOIDED" | "RETURNED",
     deliveryStatus: sale.deliveryStatus as DeliveryStatusValue,
     courier: sale.courier,
     trackingNumber: sale.trackingNumber,
@@ -400,7 +405,12 @@ export async function getDeliveryCounts(
 ): Promise<Record<DeliveryStatusValue, number>> {
   const grouped = await prisma.sale.groupBy({
     by: ["deliveryStatus"],
-    where: { saleDate: toDateFilter(range), status: "COMPLETED" },
+    // Returned orders belong on the fulfilment board even though they no
+    // longer count as revenue.
+    where: {
+      saleDate: toDateFilter(range),
+      status: { in: ["COMPLETED", "RETURNED"] },
+    },
     _count: { _all: true },
   });
 

@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { checkoutAction } from "@/actions/sales";
+import { logout } from "@/actions/auth";
 import {
   bundleLine,
   canIncrement,
@@ -52,9 +53,13 @@ const EMPTY_META: CheckoutMeta = {
 export function PosTerminal({
   catalog,
   loyalty,
+  userName,
+  canViewProfit,
 }: {
   catalog: PosCatalog;
   loyalty: LoyaltyConfig;
+  userName: string;
+  canViewProfit: boolean;
 }) {
   const router = useRouter();
   const { t } = useI18n();
@@ -237,8 +242,8 @@ export function PosTerminal({
       <header className="flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
         <div className="min-w-0">
           <h1 className="truncate text-base font-semibold text-gray-900">{t("pos.title")}</h1>
-          <p className="text-xs text-gray-500">
-            {catalog.variants.length} batches · {catalog.bundles.length} bundles
+          <p className="truncate text-xs text-gray-500">
+            {userName} · {catalog.variants.length} batches · {catalog.bundles.length} bundles
           </p>
         </div>
 
@@ -250,6 +255,14 @@ export function PosTerminal({
           >
             {t("pos.admin")}
           </a>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-gray-900 hover:text-gray-900"
+            >
+              {t("nav.signOut")}
+            </button>
+          </form>
         </div>
       </header>
 
@@ -300,6 +313,7 @@ export function PosTerminal({
             totals={totals}
             meta={meta}
             isSubmitting={isSubmitting}
+            canViewProfit={canViewProfit}
             loyalty={loyalty}
             selectedCustomer={selectedCustomer}
             maxRedeemable={maxRedeemable}

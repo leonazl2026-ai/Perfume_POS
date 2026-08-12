@@ -247,6 +247,35 @@ export const settingsFormSchema = z.object({
   redeemPointValue: z.number().int().positive("Point value must be at least 1"),
 });
 
+// ─── Users ───────────────────────────────────────────────────────────
+
+export const userFormSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1, "Name is required"),
+  username: z
+    .string()
+    .min(3, "Username must be at least 3 characters")
+    .regex(/^[a-zA-Z0-9._-]+$/, "Use letters, numbers, dot, dash or underscore only"),
+  /** Optional on edit — blank means "keep the current password". */
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .optional()
+    .or(z.literal("")),
+  role: z.enum(["ADMIN", "STAFF", "CUSTOM"]),
+  permissions: z.array(z.string()),
+});
+
+// ─── Returns ─────────────────────────────────────────────────────────
+
+export const returnConditionEnum = z.enum(["RETURNED_GOOD", "RETURNED_DAMAGED"]);
+
+export const handleReturnSchema = z.object({
+  saleId: z.string().min(1),
+  condition: returnConditionEnum,
+  notes: z.string().optional(),
+});
+
 // ─── Loyalty ─────────────────────────────────────────────────────────
 
 export const adjustPointsSchema = z

@@ -1,5 +1,7 @@
 import { PrismaClient, SaleLineType } from "@prisma/client";
 import { calcCostPerMl } from "../src/lib/pricing";
+import { hashPassword } from "../src/lib/password";
+import { PERMISSIONS, serializePermissions } from "../src/lib/permissions";
 
 const prisma = new PrismaClient();
 
@@ -131,11 +133,42 @@ async function seedSettings() {
   }
 }
 
+/**
+ * Default administrator. Created only when no user exists, so re-seeding
+ * never resets a password the shop has already changed.
+ */
+async function seedAdminUser() {
+  const existing = await prisma.user.count();
+  if (existing > 0) {
+    console.log("Users already exist — skipping default admin.");
+    return;
+  }
+
+  const username = process.env.SEED_ADMIN_USERNAME ?? "admin";
+  const password = process.env.SEED_ADMIN_PASSWORD ?? "adminpassword";
+
+  await prisma.user.create({
+    data: {
+      name: "Administrator",
+      username: username.toLowerCase(),
+      passwordHash: await hashPassword(password),
+      role: "ADMIN",
+      // ADMIN implies everything, but the list is stored too so the editor
+      // shows the boxes ticked.
+      permissions: serializePermissions([...PERMISSIONS]),
+    },
+  });
+
+  console.log(`Created admin account "${username}".`);
+  console.warn("⚠  Change this password immediately under Admin → Users.");
+}
+
 async function main() {
   console.log("Seeding database…");
 
   await seedExpenseCategories();
   await seedSettings();
+  await seedAdminUser();
 
   // Sample inventory is created only on a fresh database.
   if ((await prisma.product.count()) > 0) {

@@ -96,7 +96,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     saleDate: sale.saleDate.toISOString(),
     channel: sale.orderChannel as OrderChannelValue,
     paymentMethod: sale.paymentMethod,
-    status: sale.status as "COMPLETED" | "VOIDED",
+    status: sale.status as "COMPLETED" | "VOIDED" | "RETURNED",
     total: Number(sale.total),
     profit: Number(sale.totalProfit),
     lines: sale.lineItems.map((line) => ({

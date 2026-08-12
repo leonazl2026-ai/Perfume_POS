@@ -30,6 +30,8 @@ interface CartSidebarProps {
   totals: CartTotals;
   meta: CheckoutMeta;
   isSubmitting: boolean;
+  /** Cashiers without VIEW_ANALYTICS never see margin figures. */
+  canViewProfit: boolean;
   loyalty: LoyaltyConfig;
   selectedCustomer: CustomerSuggestion | null;
   maxRedeemable: number;
@@ -47,6 +49,7 @@ export function CartSidebar({
   totals,
   meta,
   isSubmitting,
+  canViewProfit,
   loyalty,
   selectedCustomer,
   maxRedeemable,
@@ -124,9 +127,11 @@ export function CartSidebar({
                   <p className="text-[11px] text-gray-400">
                     {formatCurrency(line.unitPrice)} {t("pos.each")}
                   </p>
-                  <p className="mt-1 text-[11px] font-medium text-emerald-600">
-                    +{formatCurrency((line.unitPrice - line.unitCost) * line.quantity)}
-                  </p>
+                  {canViewProfit && (
+                    <p className="mt-1 text-[11px] font-medium text-emerald-600">
+                      +{formatCurrency((line.unitPrice - line.unitCost) * line.quantity)}
+                    </p>
+                  )}
                 </div>
               </li>
             ))}
@@ -340,11 +345,13 @@ export function CartSidebar({
             />
           )}
           {meta.tax > 0 && <Row label={t("common.tax")} value={formatCurrency(meta.tax)} />}
-          <Row
-            label={t("pos.estimatedProfit")}
-            value={formatCurrency(totals.profit)}
-            valueClass="text-emerald-600 font-medium"
-          />
+          {canViewProfit && (
+            <Row
+              label={t("pos.estimatedProfit")}
+              value={formatCurrency(totals.profit)}
+              valueClass="text-emerald-600 font-medium"
+            />
+          )}
           <div className="flex items-center justify-between pt-1 text-base font-semibold text-gray-900">
             <dt>{t("pos.total")}</dt>
             <dd>{formatCurrency(totals.total)}</dd>

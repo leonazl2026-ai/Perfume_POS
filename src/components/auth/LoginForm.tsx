@@ -6,6 +6,7 @@ import { login } from "@/actions/auth";
 
 export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -15,7 +16,7 @@ export function LoginForm({ next }: { next: string }) {
     setError(null);
 
     startTransition(async () => {
-      const result = await login(password);
+      const result = await login(username, password);
 
       if (!result.ok) {
         setError(result.error);
@@ -41,13 +42,27 @@ export function LoginForm({ next }: { next: string }) {
         </p>
       )}
 
+      <label className="mb-3 block">
+        <span className="mb-1 block text-[11px] font-medium text-gray-600">Username</span>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          disabled={isPending}
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none transition focus:border-gray-900 disabled:bg-gray-50"
+        />
+      </label>
+
       <label className="block">
         <span className="mb-1 block text-[11px] font-medium text-gray-600">Password</span>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoFocus
           autoComplete="current-password"
           disabled={isPending}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none transition focus:border-gray-900 disabled:bg-gray-50"
@@ -56,7 +71,7 @@ export function LoginForm({ next }: { next: string }) {
 
       <button
         type="submit"
-        disabled={isPending || password.length === 0}
+        disabled={isPending || username.length === 0 || password.length === 0}
         className="mt-4 w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400"
       >
         {isPending ? "Signing in…" : "Sign in"}

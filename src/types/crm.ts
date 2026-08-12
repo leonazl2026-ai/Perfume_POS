@@ -41,7 +41,7 @@ export interface CustomerPurchase {
   saleDate: string; // ISO
   channel: OrderChannelValue;
   paymentMethod: string;
-  status: "COMPLETED" | "VOIDED";
+  status: "COMPLETED" | "VOIDED" | "RETURNED";
   total: number;
   profit: number;
   lines: CustomerPurchaseLine[];

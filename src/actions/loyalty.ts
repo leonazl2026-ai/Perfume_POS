@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { NotFoundError, UnauthorizedError } from "@/lib/errors";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { recalculateLoyaltyPoints } from "@/lib/loyalty";
 import { adjustPointsSchema } from "@/lib/validators";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
@@ -19,7 +19,7 @@ export async function adjustCustomerPoints(
   rawInput: unknown
 ): Promise<ActionResult<{ balance: number }>> {
   try {
-    await requireAdmin();
+    await requirePermission("VIEW_CUSTOMERS");
     const input = adjustPointsSchema.parse(rawInput);
 
     const balance = await prisma.$transaction(async (tx) => {
@@ -64,7 +64,7 @@ export async function adjustCustomerPoints(
 
 /** Points ledger for the CRM history modal. */
 export async function fetchLoyaltyHistory(customerId: string): Promise<LoyaltyLogRow[]> {
-  await requireAdmin();
+  await requirePermission("VIEW_CUSTOMERS");
 
   const rows = await prisma.loyaltyLog.findMany({
     where: { customerId },

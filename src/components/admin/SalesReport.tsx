@@ -10,6 +10,7 @@ import { formatDateTime, type RangePreset } from "@/lib/dateRange";
 import { DateRangeFilter, useFilterParams } from "@/components/admin/FilterBar";
 import { ExportButton } from "@/components/admin/ExportButton";
 import { DeliveryDialog } from "@/components/admin/DeliveryDialog";
+import { ReturnDialog } from "@/components/admin/ReturnDialog";
 import { DELIVERY_LABELS, DELIVERY_ORDER, DELIVERY_STYLES } from "@/lib/delivery";
 import { SaleDetailDialog } from "@/components/admin/SaleDetailDialog";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
@@ -48,6 +49,7 @@ export function SalesReport({
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deliveryTarget, setDeliveryTarget] = useState<SaleRow | null>(null);
   const [confirmVoid, setConfirmVoid] = useState<SaleRow | null>(null);
+  const [returnTarget, setReturnTarget] = useState<SaleRow | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -75,6 +77,13 @@ export function SalesReport({
 
   const applyBulk = () => {
     if (selected.size === 0) return;
+
+    // Returns need a condition and move stock, so they are never a bulk
+    // operation — the cashier must open each order and choose.
+    if (bulkStatus === "RETURNED") {
+      notify("error", "Returns are handled one order at a time — use the Return action.");
+      return;
+    }
 
     startTransition(async () => {
       const result = await bulkUpdateDelivery({
@@ -391,7 +400,7 @@ export function SalesReport({
                             >
                               Receipt
                             </a>
-                            {!voided && (
+                            {sale.status === "COMPLETED" && (
                               <>
                                 <button
                                   type="button"
@@ -402,6 +411,13 @@ export function SalesReport({
                                 </button>
                                 <button
                                   type="button"
+                                  onClick={() => setReturnTarget(sale)}
+                                  className="text-gray-600 transition hover:text-amber-700"
+                                >
+                                  Return
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => setConfirmVoid(sale)}
                                   className="text-gray-400 transition hover:text-red-600"
                                 >
@@ -409,8 +425,13 @@ export function SalesReport({
                                 </button>
                               </>
                             )}
-                            {voided && (
+                            {sale.status === "VOIDED" && (
                               <span className="text-[11px] font-normal text-red-500">Voided</span>
+                            )}
+                            {sale.status === "RETURNED" && (
+                              <span className="text-[11px] font-normal text-amber-600">
+                                Returned
+                              </span>
                             )}
                           </div>
                         </td>
@@ -466,6 +487,19 @@ export function SalesReport({
           notify("success", message);
           router.refresh();
         }}
+        onRequestReturn={(sale) => {
+          // Choosing RETURNED in the delivery dialog hands over to the return
+          // flow, which needs a condition before it can touch stock.
+          setDeliveryTarget(null);
+          setReturnTarget(sale);
+        }}
+      />
+
+      <ReturnDialog
+        key={returnTarget?.id ?? "no-return"}
+        sale={returnTarget}
+        onClose={() => setReturnTarget(null)}
+        onDone={(message) => notify("success", message)}
       />
 
       {/* Void confirmation — destructive and stock-affecting, so never one-click. */}

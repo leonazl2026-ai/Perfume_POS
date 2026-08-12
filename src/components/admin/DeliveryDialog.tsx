@@ -10,9 +10,16 @@ interface DeliveryDialogProps {
   sale: SaleRow | null;
   onClose: () => void;
   onSaved: (message: string) => void;
+  /** RETURNED needs a condition, so it is delegated to the return flow. */
+  onRequestReturn?: (sale: SaleRow) => void;
 }
 
-export function DeliveryDialog({ sale, onClose, onSaved }: DeliveryDialogProps) {
+export function DeliveryDialog({
+  sale,
+  onClose,
+  onSaved,
+  onRequestReturn,
+}: DeliveryDialogProps) {
   const [status, setStatus] = useState<DeliveryStatusValue>(
     sale?.deliveryStatus ?? "NOT_REQUIRED"
   );
@@ -87,7 +94,13 @@ export function DeliveryDialog({ sale, onClose, onSaved }: DeliveryDialogProps) 
               <button
                 key={value}
                 type="button"
-                onClick={() => setStatus(value)}
+                onClick={() => {
+                  if (value === "RETURNED" && onRequestReturn) {
+                    onRequestReturn(sale);
+                    return;
+                  }
+                  setStatus(value);
+                }}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                   status === value
                     ? "bg-gray-900 text-white"

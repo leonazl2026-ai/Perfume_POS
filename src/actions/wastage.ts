@@ -5,7 +5,7 @@ import { Prisma, InventoryTxType, WastageReason } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { InsufficientStockError, NotFoundError, UnauthorizedError } from "@/lib/errors";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { WASTAGE_CATEGORY_NAME } from "@/lib/settings";
 import { wastageLabel } from "@/lib/wastage";
 import { logWastageSchema } from "@/lib/validators";
@@ -46,7 +46,7 @@ async function getWastageCategoryId(tx: Prisma.TransactionClient): Promise<strin
  */
 export async function logWastage(rawInput: unknown): Promise<ActionResult<{ loss: number }>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_WASTAGE");
     const input = logWastageSchema.parse(rawInput);
 
     const loss = await prisma.$transaction(async (tx) => {
@@ -172,7 +172,7 @@ export async function logWastage(rawInput: unknown): Promise<ActionResult<{ loss
  */
 export async function voidWastage(wastageId: string): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_WASTAGE");
 
     await prisma.$transaction(async (tx) => {
       const log = await tx.wastageLog.findUnique({ where: { id: wastageId } });

@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { UnauthorizedError } from "@/lib/errors";
-import { requireAdmin } from "@/lib/session";
+import { currentUserCan, requirePermission } from "@/lib/session";
 import { normalizePhone, recalculateCustomer } from "@/lib/customers";
 import { getCustomerDetail, searchCustomerSuggestions } from "@/lib/crmQueries";
 import { customerFormSchema } from "@/lib/validators";
@@ -34,7 +34,7 @@ export async function upsertCustomer(
   rawInput: CustomerFormInput
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAdmin();
+    await requirePermission("VIEW_CUSTOMERS");
     const input = customerFormSchema.parse(rawInput);
 
     const phone = normalizePhone(input.phone);
@@ -68,7 +68,7 @@ export async function upsertCustomer(
 
 export async function deleteCustomer(customerId: string): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("VIEW_CUSTOMERS");
 
     const saleCount = await prisma.sale.count({ where: { customerId } });
     if (saleCount > 0) {
@@ -87,7 +87,7 @@ export async function deleteCustomer(customerId: string): Promise<ActionResult<n
 
 /** Loaded on demand by the CRM detail modal. */
 export async function fetchCustomerDetail(customerId: string): Promise<CustomerDetail | null> {
-  await requireAdmin();
+  await requirePermission("VIEW_CUSTOMERS");
   return getCustomerDetail(customerId);
 }
 
@@ -96,5 +96,10 @@ export async function fetchCustomerDetail(customerId: string): Promise<CustomerD
  * and need to match repeat buyers. Returns only what the till must show.
  */
 export async function lookupCustomers(query: string): Promise<CustomerSuggestion[]> {
+  // Cashiers need this at the till, so POS_ACCESS is enough — but it is not
+  // open to anonymous callers.
+  if (!(await currentUserCan("POS_ACCESS")) && !(await currentUserCan("VIEW_CUSTOMERS"))) {
+    return [];
+  }
   return searchCustomerSuggestions(query);
 }

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { expenseFormSchema } from "@/lib/validators";
 import { UnauthorizedError } from "@/lib/errors";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { actionError, actionOk, type ActionResult } from "@/types/actions";
 
 export type ExpenseFormInput = z.input<typeof expenseFormSchema>;
@@ -32,7 +32,7 @@ export async function upsertExpense(
   rawInput: ExpenseFormInput
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_EXPENSES");
     const input = expenseFormSchema.parse(rawInput);
 
     const data = {
@@ -55,7 +55,7 @@ export async function upsertExpense(
 
 export async function deleteExpense(expenseId: string): Promise<ActionResult<null>> {
   try {
-    await requireAdmin();
+    await requirePermission("MANAGE_EXPENSES");
     await prisma.expense.delete({ where: { id: expenseId } });
     revalidateExpenseViews();
     return actionOk(null);
